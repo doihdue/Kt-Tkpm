@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Sửa Danh mục{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Sửa danh mục: {{ category.name }}</h1>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form action="/admin/categories/{{ category.id }}/edit" method="post">
+            <div class="mb-3">
+                <label class="form-label">Tên danh mục</label>
+                <input type="text" name="name" class="form-control" value="{{ category.name }}" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Mô tả</label>
+                <textarea name="description" class="form-control" rows="3">{{ category.description or '' }}</textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">Lưu thay đổi</button>
+            <a href="/admin/categories" class="btn btn-secondary">Hủy</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

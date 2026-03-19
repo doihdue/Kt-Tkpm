@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Quản lý Khách hàng{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Quản lý Khách hàng</h1>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Tên</th>
+                        <th>Username</th>
+                        <th>Email</th>
+                        <th>SĐT</th>
+                        <th>Số đơn hàng</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for customer in customers %}
+                    <tr>
+                        <td>{{ customer.id }}</td>
+                        <td>{{ customer.name }}</td>
+                        <td>{{ customer.username }}</td>
+                        <td>{{ customer.email }}</td>
+                        <td>{{ customer.phone_number or '-' }}</td>
+                        <td>{{ order_count_map.get(customer.id, 0) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

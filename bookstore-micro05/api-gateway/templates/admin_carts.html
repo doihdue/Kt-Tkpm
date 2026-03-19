@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Quản lý Giỏ hàng{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Quản lý Giỏ hàng</h1>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Cart ID</th>
+                        <th>Customer ID</th>
+                        <th>Khách hàng</th>
+                        <th>Số sản phẩm</th>
+                        <th>Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cart in carts %}
+                    <tr>
+                        <td>{{ cart.id }}</td>
+                        <td>{{ cart.customer_id }}</td>
+                        <td>
+                            {% set customer = customer_map.get(cart.customer_id) %}
+                            {% if customer %}
+                                {{ customer.name }} ({{ customer.username }})
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>{{ cart.item_count }}</td>
+                        <td>
+                            <form action="/admin/carts/{{ cart.customer_id }}/clear" method="post" class="m-0">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Xóa toàn bộ sản phẩm trong giỏ hàng này?');">
+                                    Xóa giỏ
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

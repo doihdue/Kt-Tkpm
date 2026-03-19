@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Bảng điều khiển nhân viên{% endblock %}
+{% block content %}
+<section class="customer-hero customer-hero-compact mb-4">
+    <div class="customer-hero__content">
+        <span class="customer-kicker">Khu vực quản trị</span>
+        <h1 class="customer-hero__title">Bảng điều khiển hệ thống</h1>
+        <p class="customer-hero__subtitle">Theo dõi nhanh các chỉ số vận hành và truy cập các module quản lý trong một giao diện thống nhất.</p>
+    </div>
+</section>
+
+<div class="row g-4">
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card metric-card metric-book">
+            <div class="card-header"><i class="bi bi-book-half me-2"></i>Sách</div>
+            <div class="card-body">
+                <h5 class="card-title">{{ stats.book_count }}</h5>
+                <p class="card-text">Đầu sách đang kinh doanh.</p>
+                <a href="/books" class="btn btn-outline-light">Xem danh sach</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card metric-card metric-category">
+            <div class="card-header"><i class="bi bi-tags me-2"></i>Danh mục</div>
+            <div class="card-body">
+                <h5 class="card-title">Điều hướng</h5>
+                <p class="card-text">Tổ chức nhóm sản phẩm hiện có.</p>
+                <a href="/admin/categories" class="btn btn-outline-light">Quản lý</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card metric-card metric-order">
+            <div class="card-header"><i class="bi bi-receipt me-2"></i>Đơn hàng</div>
+            <div class="card-body">
+                <h5 class="card-title">{{ stats.order_count }}</h5>
+                <p class="card-text">Đơn hàng cần theo dõi trạng thái.</p>
+                <a href="/admin/orders" class="btn btn-outline-light">Quản lý</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card metric-card metric-customer">
+            <div class="card-header"><i class="bi bi-people me-2"></i>Khách hàng</div>
+            <div class="card-body">
+                <h5 class="card-title">{{ stats.customer_count }}</h5>
+                <p class="card-text">Tài khoản đăng ký hệ thống.</p>
+                <a href="/admin/customers" class="btn btn-outline-light">Quản lý</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card metric-card metric-cart">
+            <div class="card-header"><i class="bi bi-cart-check me-2"></i>Giỏ hàng</div>
+            <div class="card-body">
+                <h5 class="card-title">{{ stats.cart_count }}</h5>
+                <p class="card-text">Giỏ hàng đang tồn trong hệ thống.</p>
+                <a href="/admin/carts" class="btn btn-outline-light">Quản lý</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card metric-card metric-review">
+            <div class="card-header"><i class="bi bi-chat-square-text me-2"></i>Đánh giá</div>
+            <div class="card-body">
+                <h5 class="card-title">{{ stats.review_count }}</h5>
+                <p class="card-text">Nội dung review cần kiểm duyệt.</p>
+                <a href="/admin/reviews" class="btn btn-outline-light">Quản lý</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

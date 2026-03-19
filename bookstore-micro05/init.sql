@@ -1,0 +1,6 @@
+-- Create databases for each service
+CREATE DATABASE IF NOT EXISTS `customer_db`;
+CREATE DATABASE IF NOT EXISTS `cart_db`;
+CREATE DATABASE IF NOT EXISTS `book_db`;
+CREATE DATABASE IF NOT EXISTS `staff_db`;
+CREATE DATABASE IF NOT EXISTS `order_db`;

@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Thanh toán{% endblock %}
+{% block content %}
+<section class="customer-hero customer-hero-compact mb-4">
+    <div class="customer-hero__content">
+        <span class="customer-kicker">Thanh toán</span>
+        <h1 class="customer-hero__title">Hoàn tất đơn hàng</h1>
+        <p class="customer-hero__subtitle">Xác nhận địa chỉ nhận hàng và phương thức thanh toán trước khi đặt mua.</p>
+    </div>
+</section>
+
+<div class="container py-1 px-0">
+    <form action="/checkout" method="post" id="checkoutForm">
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <!-- Địa chỉ giao hàng -->
+                <div class="card shadow-sm mb-4 border-0 customer-surface">
+                    <div class="card-header bg-white py-3">
+                        <h5 class="mb-0 text-secondary"><i class="bi bi-geo-alt"></i> Địa chỉ nhận hàng</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if addresses %}
+                            <div class="mb-3">
+                                <label class="form-label fw-bold mb-2">Chọn địa chỉ có sẵn:</label>
+                                {% for addr in addresses %}
+                                <div class="form-check card p-3 mb-2 border-primary-subtle bg-light-subtle position-relative checkout-option-card">
+                                    <div class="d-flex align-items-center">
+                                        <input class="form-check-input mt-0 me-3" type="radio" name="selected_address" id="addr_{{ addr.id }}" value="{{ addr.id }}" {% if default_address_id and addr.id == default_address_id %}checked{% endif %} onchange="toggleNewAddress(false)" style="transform: scale(1.2);">
+                                        <label class="form-check-label w-100 cursor-pointer" for="addr_{{ addr.id }}">
+                                            <div class="fw-bold text-dark">{{ addr.recipient_name }} <span class="fw-normal text-muted">| {{ addr.phone_number }}</span></div>
+                                            <div class="small text-secondary">{{ addr.address_line }}, {{ addr.city }}, {{ addr.province }}</div>
+                                        </label>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                                
+                                <div class="form-check card p-3 mb-2 checkout-option-card">
+                                    <div class="d-flex align-items-center">
+                                        <input class="form-check-input mt-0 me-3" type="radio" name="selected_address" id="addr_new" value="new" {% if not addresses %}checked{% endif %} onchange="toggleNewAddress(true)" style="transform: scale(1.2);">
+                                        <label class="form-check-label fw-bold text-primary cursor-pointer" for="addr_new">
+                                            + Thêm địa chỉ mới
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        {% else %}
+                            <input type="hidden" name="selected_address" value="new">
+                        {% endif %}
+
+                        <!-- Form địa chỉ mới -->
+                        <div id="newAddressForm" class="border rounded p-4 bg-light {% if addresses %}d-none{% endif %}">
+                            <h6 class="mb-3 fw-bold text-uppercase text-secondary" style="font-size: 0.8rem;">Thông tin người nhận mới</h6>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Họ và tên <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" name="new_recipient_name">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Số điện thoại <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" name="new_phone_number">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Địa chỉ chi tiết <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" name="new_address_line" placeholder="Số nhà, tên đường, phường/xã...">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Tỉnh / Thành phố <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" name="new_city">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Quận / Huyện <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" name="new_province">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Phương thức thanh toán -->
+                <div class="card shadow-sm mb-4 border-0 customer-surface">
+                    <div class="card-header bg-white py-3">
+                        <h5 class="mb-0 text-secondary"><i class="bi bi-credit-card"></i> Phương thức thanh toán</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-check mb-3 p-3 border rounded checkout-option-card">
+                            <input class="form-check-input ms-0 me-2" type="radio" name="payment_method" id="payment_cod" value="cod" checked>
+                            <label class="form-check-label d-flex align-items-center w-100" for="payment_cod">
+                                <i class="bi bi-cash-coin text-success fs-4 me-3"></i>
+                                <div>
+                                    <span class="fw-bold d-block">Thanh toán khi nhận hàng (COD)</span>
+                                    <small class="text-muted">Thanh toán tiền mặt trực tiếp cho shipper khi nhận hàng.</small>
+                                </div>
+                            </label>
+                        </div>
+                        <div class="form-check p-3 border rounded checkout-option-card">
+                            <input class="form-check-input ms-0 me-2" type="radio" name="payment_method" id="payment_bank" value="bank_transfer">
+                            <label class="form-check-label d-flex align-items-center w-100" for="payment_bank">
+                                <i class="bi bi-bank text-primary fs-4 me-3"></i>
+                                <div>
+                                    <span class="fw-bold d-block">Chuyển khoản ngân hàng</span>
+                                    <small class="text-muted">Quét mã QR hoặc chuyển khoản thủ công 24/7.</small>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary -->
+            <div class="col-lg-4">
+                <div class="card shadow-sm position-sticky border-0 customer-surface" style="top: 2rem;">
+                    <div class="card-header bg-white py-3">
+                        <h5 class="mb-0">Đơn hàng của bạn</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <ul class="list-group list-group-flush">
+                            {% for item in items %}
+                            <li class="list-group-item d-flex justify-content-between lh-sm py-3">
+                                <div class="pe-2">
+                                    <h6 class="my-0 text-dark">{{ item.title }}</h6>
+                                    <small class="text-muted">{{ item.author }}</small>
+                                </div>
+                                <span class="text-nowrap">{{ "{:,.0f}".format(item.price|float) }}₫</span>
+                            </li>
+                            {% endfor %}
+                            <li class="list-group-item d-flex justify-content-between bg-light py-3 align-items-center">
+                                <span class="fw-bold text-uppercase small">Tổng thanh toán</span>
+                                <strong class="text-primary fs-4">{{ "{:,.0f}".format(total|float) }}₫</strong>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="card-footer bg-white p-3">
+                        <button class="btn btn-primary w-100 py-3 fw-bold text-uppercase rounded-3 shadow-sm" type="submit">Đặt hàng ngay</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+    function toggleNewAddress(show) {
+        const form = document.getElementById('newAddressForm');
+        const inputs = form.querySelectorAll('input');
+        
+        if (show) {
+            form.classList.remove('d-none');
+            inputs.forEach(input => input.required = true);
+            
+            // Smooth scroll to form
+            form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+            form.classList.add('d-none');
+            inputs.forEach(input => input.required = false);
+        }
+    }
+    
+    // Init state on load
+    document.addEventListener('DOMContentLoaded', () => {
+        const newAddrRadio = document.getElementById('addr_new');
+        if (newAddrRadio && newAddrRadio.checked) {
+            toggleNewAddress(true);
+        } else {
+            const inputs = document.getElementById('newAddressForm').querySelectorAll('input');
+            inputs.forEach(input => input.required = false);
+        }
+    });
+</script>
+{% endblock %}

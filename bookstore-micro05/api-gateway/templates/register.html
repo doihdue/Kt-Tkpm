@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Đăng ký tài khoản{% endblock %}
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-xl-10 col-lg-11">
+            <div class="card border-0 shadow-lg overflow-hidden customer-surface">
+                <div class="row g-0">
+                    <div class="col-md-5 d-none d-md-block">
+                        <div class="h-100 p-4 p-lg-5 text-white" style="background: linear-gradient(165deg, #0f172a, #0f766e);">
+                            <span class="badge rounded-pill text-bg-light text-dark mb-3">New Member</span>
+                            <h2 class="fw-bold mb-3">Tạo tài khoản trong 1 phút</h2>
+                            <p class="mb-0 opacity-75">Lưu địa chỉ, xem lịch sử đơn và nhận cập nhật trạng thái đơn hàng tự động.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-7">
+                        <div class="card-body p-4 p-md-5">
+                            <h2 class="card-title mb-3">Tạo tài khoản mới</h2>
+                            <p class="text-muted mb-4">Điền đầy đủ thông tin để bắt đầu mua sắm.</p>
+                            {% if msg %}
+                            <div class="alert alert-danger" role="alert">
+                                {{ msg }}
+                            </div>
+                            {% endif %}
+                            <form action="/register" method="post">
+                                <div class="mb-3">
+                                    <label for="name" class="form-label">Họ và tên</label>
+                                    <input type="text" class="form-control" id="name" name="name" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="username" class="form-label">Tên tài khoản</label>
+                                    <input type="text" class="form-control" id="username" name="username" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="email" class="form-label">Email</label>
+                                    <input type="email" class="form-control" id="email" name="email" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="phone_number" class="form-label">Số điện thoại</label>
+                                    <input type="tel" class="form-control" id="phone_number" name="phone_number" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="password" class="form-label">Mật khẩu</label>
+                                    <input type="password" class="form-control" id="password" name="password" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="password2" class="form-label">Xác nhận mật khẩu</label>
+                                    <input type="password" class="form-control" id="password2" name="password2" required>
+                                </div>
+                                <div class="d-grid">
+                                    <button type="submit" class="btn btn-primary btn-lg">Đăng ký</button>
+                                </div>
+                            </form>
+                            <hr class="my-4">
+                            <div class="text-center">
+                                <p class="mb-0">Đã có tài khoản? <a href="/login">Đăng nhập ngay</a></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Đặt hàng thành công{% endblock %}
+{% block content %}
+<div class="container py-4 text-center">
+    <div class="card shadow border-0 mx-auto customer-surface" style="max-width: 680px;">
+        <div class="card-body p-5">
+            <div class="mb-4">
+                <i class="bi bi-check-circle-fill text-success" style="font-size: 5rem;"></i>
+            </div>
+            <h2 class="mb-2 text-success fw-bold">Đặt hàng thành công!</h2>
+            <p class="text-muted mb-4">Cảm ơn bạn đã mua sắm tại Bookstore.</p>
+            
+            <div class="bg-light p-3 rounded mb-4 border">
+                <div class="row text-start">
+                    <div class="col-sm-6 mb-2 mb-sm-0">
+                        <small class="text-muted d-block">Mã đơn hàng:</small>
+                        <strong class="text-dark">{{ order.order_code }}</strong>
+                    </div>
+                    <div class="col-sm-6">
+                        <small class="text-muted d-block">Trạng thái:</small>
+                        <span class="badge bg-primary text-uppercase">{{ order.status }}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="alert alert-light border text-start mt-4">
+                <h6 class="alert-heading fw-bold mb-3 border-bottom pb-2"><i class="bi bi-box-seam"></i> Thông tin nhận hàng</h6>
+                <p class="mb-0"><i class="bi bi-geo-alt me-2 text-muted"></i> {{ order.shipping_address or 'Đang cập nhật' }}</p>
+            </div>
+
+            <div class="alert alert-info text-start mt-3 mb-0">
+                <i class="bi bi-receipt me-2"></i>Tổng thanh toán: <strong>{{ "{:,.0f}".format(order.total_price|float) }}₫</strong>
+            </div>
+
+            <div class="mt-5 d-grid gap-2 col-8 mx-auto">
+                <a href="/books" class="btn btn-primary btn-lg shadow-sm">
+                    <i class="bi bi-bag-plus me-2"></i> Tiếp tục mua sắm
+                </a>
+                <a href="/" class="btn btn-outline-secondary">Về trang chủ</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

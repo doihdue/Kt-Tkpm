@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Quản lý Đơn hàng{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Quản lý Đơn hàng</h1>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Mã Đơn hàng</th>
+                        <th>Khách hàng ID</th>
+                        <th>Tổng tiền</th>
+                        <th>Địa chỉ giao hàng</th>
+                        <th>Ngày đặt</th>
+                        <th style="width: 250px;">Trạng thái</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                    <tr>
+                        <td><a href="/order/{{ order.order_code }}/complete" class="fw-bold text-decoration-none">#{{ order.order_code[:8] }}...</a></td>
+                        <td>{{ order.customer_id }}</td>
+                        <td>{{ "{:,.0f}".format(order.total_price|float) }}₫</td>
+                        <td class="small">{{ order.shipping_address }}</td>
+                        <td>{{ order.created_at }}</td>
+                        <td>
+                            <form action="/admin/orders/{{ order.order_code }}/update-status" method="post" class="d-flex gap-2">
+                                <select name="status" class="form-select form-select-sm">
+                                    <option value="pending_payment" {% if order.status == 'pending_payment' %}selected{% endif %}>Chờ thanh toán</option>
+                                    <option value="processing" {% if order.status == 'processing' %}selected{% endif %}>Đang xử lý</option>
+                                    <option value="shipped" {% if order.status == 'shipped' %}selected{% endif %}>Đang giao</option>
+                                    <option value="completed" {% if order.status == 'completed' %}selected{% endif %}>Hoàn thành</option>
+                                    <option value="cancelled" {% if order.status == 'cancelled' %}selected{% endif %}>Đã hủy</option>
+                                </select>
+                                <button type="submit" class="btn btn-sm btn-primary">Cập nhật</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

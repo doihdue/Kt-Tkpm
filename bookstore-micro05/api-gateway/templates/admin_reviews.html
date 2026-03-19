@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Quản lý Đánh giá{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Quản lý Đánh giá Sách</h1>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Sách</th>
+                        <th>Khách hàng</th>
+                        <th>Điểm</th>
+                        <th>Bình luận</th>
+                        <th>Thời gian</th>
+                        <th>Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for review in reviews %}
+                    <tr>
+                        <td>
+                            <a href="/books/{{ review.book_id }}" class="text-decoration-none">{{ review.book_title }}</a>
+                        </td>
+                        <td>{{ review.customer_name }}</td>
+                        <td>{{ review.rating }}/5</td>
+                        <td>{{ review.comment or '-' }}</td>
+                        <td>{{ review.created_at or '-' }}</td>
+                        <td>
+                            <form action="/admin/reviews/{{ review.book_id }}/{{ review.id }}/delete" method="post" class="m-0">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Xóa đánh giá này?');">
+                                    Xóa
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

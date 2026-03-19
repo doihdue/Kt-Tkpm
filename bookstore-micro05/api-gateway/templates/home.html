@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Trang chủ{% endblock %}
+{% block content %}
+<section class="customer-hero mb-4">
+    <div class="customer-hero__content">
+        <span class="customer-kicker">Bookstore</span>
+        <h1 class="customer-hero__title">Không gian sách cho mọi độc giả</h1>
+        <p class="customer-hero__subtitle">Khám phá các đầu sách nổi bật, sản phẩm mới cập nhật và chọn nhanh những cuốn bạn yêu thích.</p>
+        <div class="mt-3">
+            <a href="/books" class="btn btn-primary btn-lg">
+                <i class="bi bi-compass me-2"></i>Khám phá ngay
+            </a>
+        </div>
+    </div>
+</section>
+
+{% if user and user.role == 'customer' %}
+<section class="product-showcase card shadow-sm border-0 mb-4 customer-surface">
+    <div class="card-body p-4">
+        <div class="showcase-header mb-3">
+            <h2 class="h4 mb-1">Gợi ý cho bạn</h2>
+            <p class="text-muted mb-0">Danh sách được đề xuất bởi recommender-ai-service.</p>
+        </div>
+
+        {% if recommended_books %}
+        <div class="showcase-list d-flex flex-column gap-2">
+            {% for book in recommended_books %}
+            <a href="/books/{{ book.id }}" class="showcase-item text-decoration-none">
+                <div class="showcase-item__meta">
+                    <h3 class="showcase-item__title mb-1">{{ book.title }}</h3>
+                    <p class="showcase-item__author mb-0">{{ book.author }}</p>
+                </div>
+                <div class="text-end">
+                    <div class="showcase-item__price">{{ "{:,.0f}".format(book.price|float) }}₫</div>
+                    <small class="text-muted">{{ book.recommend_reason or 'Đề xuất cá nhân hóa' }}</small>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="alert alert-info mb-0">Hiện chưa có gợi ý cá nhân hóa.</div>
+        {% endif %}
+    </div>
+</section>
+{% endif %}
+
+<section class="product-showcase card shadow-sm border-0 mb-4 customer-surface">
+    <div class="card-body p-4">
+        <div class="showcase-header mb-3">
+            <h2 class="h4 mb-1">Sản phẩm nổi bật</h2>
+            <p class="text-muted mb-0">Những sách được mua nhiều nhất gần đây.</p>
+        </div>
+
+        {% if featured_books %}
+        <div class="showcase-list d-flex flex-column gap-2">
+            {% for book in featured_books %}
+            <a href="/books/{{ book.id }}" class="showcase-item text-decoration-none">
+                <div class="showcase-item__meta">
+                    <h3 class="showcase-item__title mb-1">{{ book.title }}</h3>
+                    <p class="showcase-item__author mb-0">{{ book.author }}</p>
+                </div>
+                <div class="text-end">
+                    <div class="showcase-item__price">{{ "{:,.0f}".format(book.price|float) }}₫</div>
+                    {% if book.sold_quantity %}
+                    <small class="text-muted">Đã bán {{ book.sold_quantity }}</small>
+                    {% endif %}
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="alert alert-info mb-0">Chưa có dữ liệu bán chạy để hiển thị.</div>
+        {% endif %}
+    </div>
+</section>
+
+<section class="product-showcase card shadow-sm border-0 mb-4 customer-surface">
+    <div class="card-body p-4">
+        <div class="showcase-header mb-3">
+            <h2 class="h4 mb-1">Sản phẩm mới nhất</h2>
+            <p class="text-muted mb-0">Những đầu sách vừa được bổ sung gần đây.</p>
+        </div>
+
+        {% if newest_books %}
+        <div class="showcase-list d-flex flex-column gap-2">
+            {% for book in newest_books %}
+            <a href="/books/{{ book.id }}" class="showcase-item text-decoration-none">
+                <div class="showcase-item__meta">
+                    <h3 class="showcase-item__title mb-1">{{ book.title }}</h3>
+                    <p class="showcase-item__author mb-0">{{ book.author }}</p>
+                </div>
+                <div class="text-end">
+                    <div class="showcase-item__price">{{ "{:,.0f}".format(book.price|float) }}₫</div>
+                    <small class="text-muted">Mới cập nhật</small>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="alert alert-info mb-0">Chưa có dữ liệu sách mới để hiển thị.</div>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}

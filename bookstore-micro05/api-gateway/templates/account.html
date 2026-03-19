@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Tài khoản của tôi{% endblock %}
+{% block content %}
+<section class="customer-hero customer-hero-compact mb-4">
+    <div class="customer-hero__content">
+        <span class="customer-kicker">Tài khoản</span>
+        <h1 class="customer-hero__title">Lịch sử đơn hàng</h1>
+        <p class="customer-hero__subtitle">Theo dõi các đơn hàng bạn đã đặt và truy cập chi tiết từng giao dịch.</p>
+    </div>
+</section>
+
+<div class="row g-4">
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0 customer-surface">
+            <div class="card-header bg-white border-0">
+                <h5 class="mb-0">Tài khoản</h5>
+            </div>
+            <div class="list-group list-group-flush account-nav">
+                <a href="/account" class="list-group-item list-group-item-action active" aria-current="true">
+                    <i class="bi bi-clock-history me-2"></i>Lịch sử đơn hàng
+                </a>
+                <a href="/account/addresses" class="list-group-item list-group-item-action">
+                    <i class="bi bi-geo-alt me-2"></i>Sổ địa chỉ
+                </a>
+                <a href="/logout" class="list-group-item list-group-item-action text-danger">
+                    <i class="bi bi-box-arrow-right me-2"></i>Đăng xuất
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-9">
+        <div class="card shadow-sm border-0 customer-surface">
+            <div class="card-header bg-white border-0">
+                <h5 class="mb-0">Lịch sử đơn hàng</h5>
+            </div>
+            <div class="card-body">
+                {% if user_orders %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>Mã đơn hàng</th>
+                                <th>Ngày đặt</th>
+                                <th>Tổng tiền</th>
+                                <th>Trạng thái</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for order in user_orders %}
+                            <tr>
+                                <td><a href="/order/{{ order.order_code }}/complete" class="fw-bold text-decoration-none text-primary">#{{ order.order_code[:8] }}...</a></td>
+                                <td>{{ order.created_at }}</td>
+                                <td>{{ "{:,.0f}".format(order.total_price|float) }}₫</td>
+                                <td><span class="badge bg-primary text-uppercase">{{ order.status }}</span></td>
+                                <td><a href="/order/{{ order.order_code }}/complete" class="btn btn-sm btn-outline-primary">Xem chi tiết</a></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center p-5">
+                    <p class="mb-0 text-muted">Bạn chưa có đơn hàng nào.</p>
+                    <a href="/books" class="btn btn-primary mt-3">Bắt đầu mua sắm</a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

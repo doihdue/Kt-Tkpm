@@ -1,0 +1,219 @@
+services:
+  customer-service:
+    build: ./customer-service
+    ports:
+      - "8001:8000"
+    environment:
+      DB_ENGINE: "django.db.backends.mysql"
+      DB_NAME: "customer_db"
+      DB_USER: "${MYSQL_USER:-root}"
+      DB_PASSWORD: "${MYSQL_PASSWORD:-123456}"
+      DB_HOST: "${MYSQL_HOST:-host.docker.internal}"
+      DB_PORT: "${MYSQL_PORT:-3306}"
+    command: >
+      bash -c "pip install pymysql &&
+      python manage.py makemigrations &&
+      python manage.py migrate &&
+      gunicorn customer_service.wsgi --bind 0.0.0.0:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/customers/')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  cart-service:
+    build: ./cart-service
+    ports:
+      - "8002:8000"
+    environment:
+      DB_ENGINE: "django.db.backends.mysql"
+      DB_NAME: "cart_db"
+      DB_USER: "${MYSQL_USER:-root}"
+      DB_PASSWORD: "${MYSQL_PASSWORD:-123456}"
+      DB_HOST: "${MYSQL_HOST:-host.docker.internal}"
+      DB_PORT: "${MYSQL_PORT:-3306}"
+    command: >
+      bash -c "pip install pymysql &&
+      python manage.py makemigrations &&
+      python manage.py migrate &&
+      gunicorn cart_service.wsgi --bind 0.0.0.0:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/carts/')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  book-service:
+    build: ./book-service
+    ports:
+      - "8003:8000"
+    environment:
+      DB_ENGINE: "django.db.backends.mysql"
+      DB_NAME: "book_db"
+      DB_USER: "${MYSQL_USER:-root}"
+      DB_PASSWORD: "${MYSQL_PASSWORD:-123456}"
+      DB_HOST: "${MYSQL_HOST:-host.docker.internal}"
+      DB_PORT: "${MYSQL_PORT:-3306}"
+    command: >
+      bash -c "pip install pymysql &&
+      python manage.py makemigrations &&
+      python manage.py migrate &&
+      gunicorn book_service.wsgi --bind 0.0.0.0:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/books/')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  staff-service:
+    build: ./staff-service
+    ports:
+      - "8004:8000"
+    environment:
+      DB_ENGINE: "django.db.backends.mysql"
+      DB_NAME: "staff_db"
+      DB_USER: "${MYSQL_USER:-root}"
+      DB_PASSWORD: "${MYSQL_PASSWORD:-123456}"
+      DB_HOST: "${MYSQL_HOST:-host.docker.internal}"
+      DB_PORT: "${MYSQL_PORT:-3306}"
+      ADMIN_USER: "admin"
+      ADMIN_EMAIL: "admin@bookstore.com"
+      ADMIN_PASSWORD: "SecurePassword123"
+    command: >
+      bash -c "pip install pymysql &&
+      python manage.py makemigrations &&
+      python manage.py migrate &&
+      python manage.py init_admin &&
+      gunicorn staff_service.wsgi --bind 0.0.0.0:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/staff/')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  order-service:
+    build: ./order-service
+    ports:
+      - "8005:8000"
+    environment:
+      # Sử dụng driver mysqlclient mặc định hoặc pymysql nếu có
+      DB_URL: "mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-123456}@${MYSQL_HOST:-host.docker.internal}:${MYSQL_PORT:-3306}/order_db"
+    command: >
+      bash -c "pip install pymysql sqlalchemy httpx &&
+      uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      # Check /docs endpoint which is default in FastAPI
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  payment-service:
+    build: ./payment-service
+    ports:
+      - "8006:8000"
+    depends_on:
+      - order-service
+    command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      # Check /docs endpoint which is default in FastAPI
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+
+  shipping-service:
+    build: ./shipping-service
+    ports:
+      - "8007:8000"
+    depends_on:
+      - order-service
+    command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      # Check /docs endpoint which is default in FastAPI
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  manager-service:
+    build: ./manager-service
+    ports:
+      - "8008:8000"
+    environment:
+      DB_URL: "mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-123456}@${MYSQL_HOST:-host.docker.internal}:${MYSQL_PORT:-3306}/manager_db"
+    command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/manager/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  catalog-service:
+    build: ./catalog-service
+    ports:
+      - "8009:8000"
+    environment:
+      DB_URL: "mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-123456}@${MYSQL_HOST:-host.docker.internal}:${MYSQL_PORT:-3306}/catalog_db"
+    command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/catalog/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  comment-rate-service:
+    build: ./comment-rate-service
+    ports:
+      - "8010:8000"
+    environment:
+      DB_URL: "mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-123456}@${MYSQL_HOST:-host.docker.internal}:${MYSQL_PORT:-3306}/comment_rate_db"
+    command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/comment-rates/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  recommender-ai-service:
+    build: ./recommender-ai-service
+    ports:
+      - "8011:8000"
+    environment:
+      DB_URL: "mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-123456}@${MYSQL_HOST:-host.docker.internal}:${MYSQL_PORT:-3306}/recommender_db"
+    command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/recommendations/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "8080:8000"
+    depends_on:
+      customer-service:
+        condition: service_healthy
+      cart-service:
+        condition: service_healthy
+      book-service:
+        condition: service_healthy
+      staff-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+      shipping-service:
+        condition: service_healthy
+      manager-service:
+        condition: service_healthy
+      catalog-service:
+        condition: service_healthy
+      comment-rate-service:
+        condition: service_healthy
+      recommender-ai-service:
+        condition: service_healthy
+    command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
