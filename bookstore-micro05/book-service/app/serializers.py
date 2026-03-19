@@ -22,7 +22,7 @@ class BookSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Book
-        fields = ['id', 'title', 'author', 'category', 'category_pk', 'category_id', 'price', 'description', 'stock', 'average_rating']
+        fields = ['id', 'title', 'author', 'category', 'category_pk', 'category_id', 'price', 'image_url', 'description', 'stock', 'average_rating']
 
     def get_average_rating(self, obj):
         reviews = obj.reviews.all()

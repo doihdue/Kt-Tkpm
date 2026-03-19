@@ -43,6 +43,9 @@
     {% for book in books %}
     <div class="col">
         <div class="card h-100 shadow-sm border-0 product-card book-tile">
+            {% if book.image_url %}
+            <img src="{{ book.image_url }}" class="card-img-top" alt="{{ book.title }}" style="height: 220px; object-fit: cover;">
+            {% endif %}
             <div class="card-body d-flex flex-column">
                 <h5 class="card-title h6 mb-1 flex-grow-1">
                     <a href="/books/{{ book.id }}" class="text-decoration-none text-dark product-title">{{ book.title }}</a>

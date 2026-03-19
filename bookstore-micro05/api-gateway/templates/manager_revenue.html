@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Quản lý Doanh thu{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h1 class="h3 mb-0">Quản lý Doanh thu</h1>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="text-muted small">Tổng doanh thu (đơn đang xử lý/đã giao/hoàn thành)</div>
+                <div class="h3 mt-1 mb-0">{{ "{:,.0f}".format(total_revenue|float) }}₫</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="text-muted small">Số đơn tính doanh thu</div>
+                <div class="h3 mt-1 mb-0">{{ completed_order_count }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <h2 class="h5 mb-3">Doanh thu theo tháng</h2>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Tháng</th>
+                        <th>Doanh thu</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in monthly_revenue %}
+                    <tr>
+                        <td>{{ item.month }}</td>
+                        <td>{{ "{:,.0f}".format(item.revenue|float) }}₫</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not monthly_revenue %}
+                    <tr>
+                        <td colspan="2" class="text-muted">Chưa có dữ liệu doanh thu.</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body">
+        <h2 class="h5 mb-3">Đơn hàng được tính doanh thu</h2>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Mã đơn</th>
+                        <th>Khách hàng</th>
+                        <th>Trạng thái</th>
+                        <th>Tổng tiền</th>
+                        <th>Ngày tạo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                    <tr>
+                        <td><a href="/order/{{ order.order_code }}/complete" class="fw-bold text-decoration-none">#{{ order.order_code[:8] }}...</a></td>
+                        <td>{{ order.customer_id }}</td>
+                        <td>{{ order.status }}</td>
+                        <td>{{ "{:,.0f}".format(order.total_price|float) }}₫</td>
+                        <td>{{ order.created_at }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not orders %}
+                    <tr>
+                        <td colspan="5" class="text-muted">Không có đơn hàng phù hợp.</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

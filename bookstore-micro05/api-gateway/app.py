@@ -1,4 +1,5 @@
 import asyncio
+import os
 import httpx
 from typing import Optional, List
 from urllib.parse import urlencode
@@ -24,6 +25,13 @@ ORDER_SERVICE_URL = "http://order-service:8000"
 STAFF_SERVICE_URL = "http://staff-service:8000"
 COMMENT_RATE_SERVICE_URL = "http://comment-rate-service:8000"
 RECOMMENDER_AI_SERVICE_URL = "http://recommender-ai-service:8000"
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
+
+
+def normalize_staff_role(raw_role: Optional[str]) -> str:
+    if raw_role in ("manager", "admin"):
+        return "manager"
+    return "staff"
 
 # --- Data Layer ---
 # Authentication is mocked because backend services lack password fields.
@@ -32,7 +40,22 @@ RECOMMENDER_AI_SERVICE_URL = "http://recommender-ai-service:8000"
 
 async def get_current_user(request: Request):
     user_session_data = request.session.get("user")
-    if not user_session_data:
+    access_token = request.session.get("access_token")
+
+    if not user_session_data or not access_token:
+        raise HTTPException(status_code=status.HTTP_307_TEMPORARY_REDIRECT, headers={"Location": "/login"})
+
+    try:
+        async with httpx.AsyncClient(base_url=AUTH_SERVICE_URL, timeout=8) as auth_client:
+            token_res = await auth_client.get("/auth/validate", headers={"Authorization": f"Bearer {access_token}"})
+            token_res.raise_for_status()
+            token_user = token_res.json().get("user") or {}
+            user_session_data["id"] = token_user.get("id")
+            user_session_data["username"] = token_user.get("username")
+            user_session_data["role"] = token_user.get("role")
+            request.session["user"] = user_session_data
+    except (httpx.RequestError, httpx.HTTPStatusError):
+        request.session.clear()
         raise HTTPException(status_code=status.HTTP_307_TEMPORARY_REDIRECT, headers={"Location": "/login"})
 
     user_id = user_session_data.get("id")
@@ -43,7 +66,7 @@ async def get_current_user(request: Request):
     if user_role == "customer":
         service_url = CUSTOMER_SERVICE_URL
         api_path = f"/api/customers/{user_id}/"
-    elif user_role == "staff":
+    elif user_role in ("staff", "manager"):
         service_url = STAFF_SERVICE_URL
         api_path = f"/api/staff/{user_id}/"
     else:
@@ -55,6 +78,11 @@ async def get_current_user(request: Request):
             response = await client.get(api_path)
             if response.status_code == 200:
                 user_info = response.json()
+                if user_role in ("staff", "manager"):
+                    resolved_role = normalize_staff_role(user_info.get("role"))
+                    user_session_data["role"] = resolved_role
+                    request.session["user"] = user_session_data
+                    user_role = resolved_role
                 user_info['role'] = user_role
                 user_info['username'] = user_session_data.get('username')
                 return user_info
@@ -168,6 +196,8 @@ async def home(request: Request):
     if user_session:
         if user_session.get("role") == "staff":
             return RedirectResponse(url="/admin")
+        if user_session.get("role") == "manager":
+            return RedirectResponse(url="/manager")
 
     user = user_session if user_session else None
     featured_books, newest_books, recommended_books = [], [], []
@@ -233,7 +263,6 @@ async def register_post(
 
             # Automatically log in after successful registration
             login_payload = {"username": username, "password": password}
-            # NOTE: This assumes a login endpoint like /api/auth/token/ exists on customer-service
             login_res = await client.post("/api/auth/token/", json=login_payload)
             
             if login_res.status_code == 200:
@@ -243,6 +272,12 @@ async def register_post(
                     "username": user_data.get("username"),
                     "role": "customer"
                 }
+                # Populate JWT session by authenticating through auth-service.
+                async with httpx.AsyncClient(base_url=AUTH_SERVICE_URL, timeout=8) as auth_client:
+                    auth_res = await auth_client.post("/auth/login", json=login_payload)
+                    if auth_res.status_code == 200:
+                        token_data = auth_res.json()
+                        request.session["access_token"] = token_data.get("access_token")
                 return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
             else:
                 return templates.TemplateResponse("login.html", {"request": request, "msg": "Đăng ký thành công. Vui lòng đăng nhập."})
@@ -258,25 +293,26 @@ async def login_get(request: Request, msg: Optional[str] = None):
 @app.post("/login", response_class=HTMLResponse)
 async def login_post(request: Request, username: str = Form(...), password: str = Form(...)):
     login_payload = {"username": username, "password": password}
-    
-    # Try staff login first so admin account always lands on dashboard.
-    try:
-        async with httpx.AsyncClient(base_url=STAFF_SERVICE_URL) as client:
-            response = await client.post("/api/auth/token/", json=login_payload)
-        if response.status_code == 200:
-            user_data = response.json()
-            request.session["user"] = {"id": user_data.get("id"), "username": user_data.get("username"), "role": "staff"}
-            return RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
-    except httpx.RequestError:
-        pass # Fall through to try customer login
 
-    # Try customer login
     try:
-        async with httpx.AsyncClient(base_url=CUSTOMER_SERVICE_URL) as client:
-            response = await client.post("/api/auth/token/", json=login_payload)
+        async with httpx.AsyncClient(base_url=AUTH_SERVICE_URL, timeout=8) as client:
+            response = await client.post("/auth/login", json=login_payload)
+
         if response.status_code == 200:
-            user_data = response.json()
-            request.session["user"] = {"id": user_data.get("id"), "username": user_data.get("username"), "role": "customer"}
+            auth_data = response.json()
+            user_data = auth_data.get("user") or {}
+            gateway_role = user_data.get("role")
+            request.session["user"] = {
+                "id": user_data.get("id"),
+                "username": user_data.get("username"),
+                "role": gateway_role,
+            }
+            request.session["access_token"] = auth_data.get("access_token")
+
+            if gateway_role == "manager":
+                return RedirectResponse(url="/manager", status_code=status.HTTP_302_FOUND)
+            if gateway_role == "staff":
+                return RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
             return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
     except httpx.RequestError:
         return templates.TemplateResponse("login.html", {"request": request, "msg": "Dịch vụ đăng nhập không khả dụng."})
@@ -286,7 +322,7 @@ async def login_post(request: Request, username: str = Form(...), password: str 
 
 @app.get("/logout")
 async def logout(request: Request):
-    request.session.pop("user", None)
+    request.session.clear()
     return RedirectResponse(url="/login")
 
 
@@ -447,6 +483,7 @@ async def edit_book_post(
     author: str = Form(...),
     category_id: Optional[str] = Form(None),
     price: float = Form(...),
+    image_url: Optional[str] = Form(None),
     stock: int = Form(...),
     user: dict = Depends(get_current_user),
 ):
@@ -462,7 +499,9 @@ async def edit_book_post(
         "title": title,
         "author": author,
         "category_id": parsed_category_id,
-        "price": price, "stock": stock
+        "price": price,
+        "image_url": image_url.strip() if image_url else None,
+        "stock": stock
     }
     try:
         async with httpx.AsyncClient(base_url=BOOK_SERVICE_URL) as client:
@@ -815,7 +854,7 @@ async def checkout_post(
 
 @app.get("/order/{order_code}/complete", response_class=HTMLResponse)
 async def order_complete(request: Request, order_code: str, user: dict = Depends(get_current_user)):
-    role_required(user, ["customer", "staff"])
+    role_required(user, ["customer", "staff", "manager"])
     order = await get_order_by_code(order_code)
     return templates.TemplateResponse("order_complete.html", {"request": request, "user": user, "order": order})
 
@@ -858,7 +897,7 @@ async def confirm_payment(request: Request, order_code: str, user: dict = Depend
 
 @app.get("/account", response_class=HTMLResponse)
 async def view_account(request: Request, user: dict = Depends(get_current_user)):
-    role_required(user, ["customer", "staff"]) # Allow staff to see their account too
+    role_required(user, ["customer", "staff", "manager"])
     user_orders = []
     if user['role'] == 'customer':
         try:
@@ -941,6 +980,7 @@ async def add_book_post(
     author: str = Form(...),
     category_id: Optional[str] = Form(None),
     price: float = Form(...),
+    image_url: Optional[str] = Form(None),
     stock: int = Form(...),
     user: dict = Depends(get_current_user),
 ):
@@ -952,7 +992,14 @@ async def add_book_post(
         except ValueError:
             raise HTTPException(status_code=400, detail="Danh mục không hợp lệ.")
 
-    new_book = {"title": title, "author": author, "category_id": parsed_category_id, "price": price, "stock": stock}
+    new_book = {
+        "title": title,
+        "author": author,
+        "category_id": parsed_category_id,
+        "price": price,
+        "image_url": image_url.strip() if image_url else None,
+        "stock": stock,
+    }
     try:
         async with httpx.AsyncClient(base_url=BOOK_SERVICE_URL) as client:
             response = await client.post("/api/books/", json=new_book)
@@ -966,7 +1013,7 @@ async def add_book_post(
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, user: dict = Depends(get_current_user)):
     role_required(user, ["staff"])
-    books, orders, carts, customers = [], [], [], []
+    books, orders = [], []
     review_count = 0
     try:
         async with httpx.AsyncClient(base_url=BOOK_SERVICE_URL) as client:
@@ -994,22 +1041,6 @@ async def admin_dashboard(request: Request, user: dict = Depends(get_current_use
     except httpx.RequestError:
         pass
 
-    try:
-        async with httpx.AsyncClient(base_url=CART_SERVICE_URL) as client:
-            response = await client.get("/api/carts/")
-            if response.status_code == 200:
-                carts = response.json()
-    except httpx.RequestError:
-        pass
-
-    try:
-        async with httpx.AsyncClient(base_url=CUSTOMER_SERVICE_URL) as client:
-            response = await client.get("/api/customers/")
-            if response.status_code == 200:
-                customers = response.json()
-    except httpx.RequestError:
-        pass
-
     return templates.TemplateResponse("admin.html", {
         "request": request,
         "user": user,
@@ -1017,8 +1048,6 @@ async def admin_dashboard(request: Request, user: dict = Depends(get_current_use
         "stats": {
             "book_count": len(books),
             "order_count": len(orders),
-            "cart_count": len(carts),
-            "customer_count": len(customers),
             "review_count": review_count,
         }
     })
@@ -1026,7 +1055,7 @@ async def admin_dashboard(request: Request, user: dict = Depends(get_current_use
 
 @app.get("/admin/customers", response_class=HTMLResponse)
 async def admin_customers_list(request: Request, user: dict = Depends(get_current_user)):
-    role_required(user, ["staff"])
+    role_required(user, ["manager"])
     customers, orders = [], []
 
     try:
@@ -1061,7 +1090,7 @@ async def admin_customers_list(request: Request, user: dict = Depends(get_curren
 
 @app.get("/admin/carts", response_class=HTMLResponse)
 async def admin_carts_list(request: Request, user: dict = Depends(get_current_user)):
-    role_required(user, ["staff"])
+    role_required(user, ["manager"])
     carts, customers = [], []
 
     try:
@@ -1094,7 +1123,7 @@ async def admin_carts_list(request: Request, user: dict = Depends(get_current_us
 
 @app.post("/admin/carts/{customer_id}/clear")
 async def admin_clear_cart(request: Request, customer_id: int, user: dict = Depends(get_current_user)):
-    role_required(user, ["staff"])
+    role_required(user, ["manager"])
     try:
         async with httpx.AsyncClient(base_url=CART_SERVICE_URL) as client:
             await client.delete(f"/api/carts/{customer_id}/")
@@ -1256,3 +1285,211 @@ async def admin_delete_category(request: Request, cat_id: int, user: dict = Depe
     async with httpx.AsyncClient() as client:
         await client.delete(f"{BOOK_SERVICE_URL}/api/categories/{cat_id}/")
     return RedirectResponse(url="/admin/categories", status_code=status.HTTP_302_FOUND)
+
+
+@app.get("/manager", response_class=HTMLResponse)
+async def manager_dashboard(request: Request, user: dict = Depends(get_current_user)):
+    role_required(user, ["manager"])
+    customers, staffs, orders = [], [], []
+
+    try:
+        async with httpx.AsyncClient(base_url=CUSTOMER_SERVICE_URL) as client:
+            response = await client.get("/api/customers/")
+            if response.status_code == 200:
+                customers = response.json()
+    except httpx.RequestError:
+        pass
+
+    try:
+        async with httpx.AsyncClient(base_url=STAFF_SERVICE_URL) as client:
+            response = await client.get("/api/staff/")
+            if response.status_code == 200:
+                staffs = response.json()
+    except httpx.RequestError:
+        pass
+
+    try:
+        async with httpx.AsyncClient(base_url=ORDER_SERVICE_URL) as client:
+            response = await client.get("/api/orders")
+            if response.status_code == 200:
+                orders = response.json()
+    except httpx.RequestError:
+        pass
+
+    total_revenue = sum(float(order.get("total_price") or 0) for order in orders if order.get("status") != "cancelled")
+
+    return templates.TemplateResponse("manager.html", {
+        "request": request,
+        "user": user,
+        "stats": {
+            "customer_count": len(customers),
+            "staff_count": len(staffs),
+            "order_count": len(orders),
+            "total_revenue": total_revenue,
+        }
+    })
+
+
+@app.get("/manager/customers", response_class=HTMLResponse)
+async def manager_customers_list(request: Request, user: dict = Depends(get_current_user)):
+    role_required(user, ["manager"])
+    customers, orders = [], []
+
+    try:
+        async with httpx.AsyncClient(base_url=CUSTOMER_SERVICE_URL) as client:
+            response = await client.get("/api/customers/")
+            if response.status_code == 200:
+                customers = response.json()
+    except httpx.RequestError as e:
+        print(f"Error fetching customers: {e}")
+
+    try:
+        async with httpx.AsyncClient(base_url=ORDER_SERVICE_URL) as client:
+            response = await client.get("/api/orders")
+            if response.status_code == 200:
+                orders = response.json()
+    except httpx.RequestError as e:
+        print(f"Error fetching orders for customer stats: {e}")
+
+    order_count_map = {}
+    for order in orders:
+        customer_id = order.get("customer_id")
+        if customer_id is not None:
+            order_count_map[customer_id] = order_count_map.get(customer_id, 0) + 1
+
+    return templates.TemplateResponse("admin_customers.html", {
+        "request": request,
+        "user": user,
+        "customers": customers,
+        "order_count_map": order_count_map,
+    })
+
+
+@app.get("/manager/revenue", response_class=HTMLResponse)
+async def manager_revenue(request: Request, user: dict = Depends(get_current_user)):
+    role_required(user, ["manager"])
+    orders = []
+
+    try:
+        async with httpx.AsyncClient(base_url=ORDER_SERVICE_URL) as client:
+            response = await client.get("/api/orders")
+            if response.status_code == 200:
+                orders = response.json()
+    except httpx.RequestError as e:
+        print(f"Error fetching orders for revenue page: {e}")
+
+    paid_statuses = {"processing", "shipped", "completed"}
+    paid_orders = [order for order in orders if order.get("status") in paid_statuses]
+    total_revenue = sum(float(order.get("total_price") or 0) for order in paid_orders)
+
+    monthly_revenue_map = {}
+    for order in paid_orders:
+        created_at = str(order.get("created_at") or "")
+        month_key = created_at[:7] if len(created_at) >= 7 else "Khác"
+        monthly_revenue_map[month_key] = monthly_revenue_map.get(month_key, 0) + float(order.get("total_price") or 0)
+
+    monthly_revenue = [
+        {"month": month, "revenue": revenue}
+        for month, revenue in sorted(monthly_revenue_map.items(), reverse=True)
+    ]
+
+    return templates.TemplateResponse("manager_revenue.html", {
+        "request": request,
+        "user": user,
+        "orders": paid_orders,
+        "total_revenue": total_revenue,
+        "completed_order_count": len(paid_orders),
+        "monthly_revenue": monthly_revenue,
+    })
+
+
+@app.get("/manager/staff", response_class=HTMLResponse)
+async def manager_staff_list(request: Request, user: dict = Depends(get_current_user)):
+    role_required(user, ["manager"])
+    staffs = []
+    try:
+        async with httpx.AsyncClient(base_url=STAFF_SERVICE_URL) as client:
+            response = await client.get("/api/staff/")
+            if response.status_code == 200:
+                staffs = response.json()
+    except httpx.RequestError as e:
+        print(f"Error fetching staffs: {e}")
+
+    return templates.TemplateResponse("manager_staff.html", {
+        "request": request,
+        "user": user,
+        "staffs": staffs,
+    })
+
+
+@app.post("/manager/staff/add")
+async def manager_add_staff(
+    request: Request,
+    name: str = Form(...),
+    username: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    role: str = Form(...),
+    is_active: Optional[str] = Form(None),
+    user: dict = Depends(get_current_user),
+):
+    role_required(user, ["manager"])
+    payload = {
+        "name": name,
+        "username": username,
+        "email": email,
+        "password": password,
+        "role": role,
+        "is_active": is_active == "on",
+    }
+    try:
+        async with httpx.AsyncClient(base_url=STAFF_SERVICE_URL) as client:
+            await client.post("/api/staff/", json=payload)
+    except httpx.RequestError as e:
+        print(f"Error adding staff: {e}")
+    return RedirectResponse(url="/manager/staff", status_code=status.HTTP_302_FOUND)
+
+
+@app.post("/manager/staff/{staff_id}/update")
+async def manager_update_staff(
+    request: Request,
+    staff_id: int,
+    role: str = Form(...),
+    password: Optional[str] = Form(None),
+    is_active: Optional[str] = Form(None),
+    user: dict = Depends(get_current_user),
+):
+    role_required(user, ["manager"])
+    payload = {
+        "role": role,
+        "is_active": is_active == "on",
+    }
+    try:
+        async with httpx.AsyncClient(base_url=STAFF_SERVICE_URL) as client:
+            staff_response = await client.get(f"/api/staff/{staff_id}/")
+            if staff_response.status_code == 200:
+                current_staff = staff_response.json()
+                payload = {
+                    "name": current_staff.get("name"),
+                    "username": current_staff.get("username"),
+                    "email": current_staff.get("email"),
+                    "role": role,
+                    "is_active": is_active == "on",
+                }
+            if password:
+                payload["password"] = password
+            await client.put(f"/api/staff/{staff_id}/", json=payload)
+    except httpx.RequestError as e:
+        print(f"Error updating staff {staff_id}: {e}")
+    return RedirectResponse(url="/manager/staff", status_code=status.HTTP_302_FOUND)
+
+
+@app.post("/manager/staff/{staff_id}/delete")
+async def manager_delete_staff(request: Request, staff_id: int, user: dict = Depends(get_current_user)):
+    role_required(user, ["manager"])
+    try:
+        async with httpx.AsyncClient(base_url=STAFF_SERVICE_URL) as client:
+            await client.delete(f"/api/staff/{staff_id}/")
+    except httpx.RequestError as e:
+        print(f"Error deleting staff {staff_id}: {e}")
+    return RedirectResponse(url="/manager/staff", status_code=status.HTTP_302_FOUND)

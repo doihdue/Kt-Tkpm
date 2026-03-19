@@ -28,6 +28,16 @@
                 <label for="price" class="form-label">Giá (VND)</label>
                 <input class="form-control" type="number" name="price" value="{{ book.price }}" min="0" required>
             </div>
+            <div class="col-12">
+                <label for="image_url" class="form-label">Ảnh sách (URL)</label>
+                <input class="form-control" type="url" name="image_url" value="{{ book.image_url or '' }}" placeholder="https://example.com/book-cover.jpg">
+                <div class="form-text">Để trống để xóa ảnh hiện tại.</div>
+            </div>
+            {% if book.image_url %}
+            <div class="col-12">
+                <img src="{{ book.image_url }}" alt="{{ book.title }}" class="img-thumbnail" style="max-height: 220px; width: auto;">
+            </div>
+            {% endif %}
             <div class="col-md-6">
                 <label for="stock" class="form-label">Tồn kho</label>
                 <input class="form-control" type="number" name="stock" value="{{ book.stock }}" min="0" required>

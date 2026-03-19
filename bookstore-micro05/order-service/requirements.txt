@@ -4,3 +4,4 @@ httpx
 sqlalchemy
 pymysql
 requests
+pika

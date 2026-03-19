@@ -14,12 +14,16 @@
         <div class="card shadow-sm border-0 customer-surface">
             <div class="card-body p-4 p-lg-5">
                 <div class="row g-4 align-items-stretch">
+                    {% if book.image_url %}
                     <div class="col-md-4">
                         <div class="book-showcase d-flex align-items-center justify-content-center h-100">
-                            <i class="bi bi-book text-primary-emphasis" style="font-size: 6rem;"></i>
+                            <img src="{{ book.image_url }}" alt="{{ book.title }}" class="img-fluid rounded" style="max-height: 420px; object-fit: cover;">
                         </div>
                     </div>
                     <div class="col-md-8">
+                    {% else %}
+                    <div class="col-md-12">
+                    {% endif %}
                         <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
                             <span class="badge rounded-pill text-bg-light border">{{ book.category or 'Chung' }}</span>
                             {% if book.stock > 0 %}

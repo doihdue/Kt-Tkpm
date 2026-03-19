@@ -59,14 +59,23 @@
                     <a href="/admin/categories" class="btn btn-sm {% if request.url.path.startswith('/admin/categories') %}btn-primary{% else %}btn-outline-secondary{% endif %}">
                         <i class="bi bi-tags me-1"></i>Danh mục
                     </a>
-                    <a href="/admin/customers" class="btn btn-sm {% if request.url.path.startswith('/admin/customers') %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-                        <i class="bi bi-people me-1"></i>Khách hàng
-                    </a>
-                    <a href="/admin/carts" class="btn btn-sm {% if request.url.path.startswith('/admin/carts') %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-                        <i class="bi bi-cart-check me-1"></i>Giỏ hàng
-                    </a>
                     <a href="/admin/reviews" class="btn btn-sm {% if request.url.path.startswith('/admin/reviews') %}btn-primary{% else %}btn-outline-secondary{% endif %}">
                         <i class="bi bi-chat-square-text me-1"></i>Đánh giá
+                    </a>
+                    {% endif %}
+
+                    {% if user.role == 'manager' %}
+                    <a href="/manager" class="btn btn-sm {% if request.url.path == '/manager' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                        <i class="bi bi-speedometer2 me-1"></i>Tổng quan
+                    </a>
+                    <a href="/manager/customers" class="btn btn-sm {% if request.url.path.startswith('/manager/customers') %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                        <i class="bi bi-people me-1"></i>Khách hàng
+                    </a>
+                    <a href="/manager/revenue" class="btn btn-sm {% if request.url.path.startswith('/manager/revenue') %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                        <i class="bi bi-graph-up-arrow me-1"></i>Doanh thu
+                    </a>
+                    <a href="/manager/staff" class="btn btn-sm {% if request.url.path.startswith('/manager/staff') %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                        <i class="bi bi-person-badge me-1"></i>Nhân sự
                     </a>
                     {% endif %}
                 </nav>

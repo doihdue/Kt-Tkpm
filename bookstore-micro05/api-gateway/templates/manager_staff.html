@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Quản lý Nhân sự{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h1 class="h3 mb-0">Quản lý Nhân sự</h1>
+</div>
+
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <h2 class="h5 mb-3">Thêm nhân sự</h2>
+        <form action="/manager/staff/add" method="post" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Họ tên</label>
+                <input type="text" class="form-control" name="name" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Username</label>
+                <input type="text" class="form-control" name="username" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-control" name="email" required>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Mật khẩu</label>
+                <input type="password" class="form-control" name="password" required>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Vai trò</label>
+                <select class="form-select" name="role" required>
+                    <option value="staff">Staff</option>
+                    <option value="manager">Manager</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <div class="col-md-1 d-flex align-items-end">
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="is_active" id="new_is_active" checked>
+                    <label class="form-check-label" for="new_is_active">Active</label>
+                </div>
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary">Thêm nhân sự</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Họ tên</th>
+                        <th>Username</th>
+                        <th>Email</th>
+                        <th>Vai trò</th>
+                        <th>Kích hoạt</th>
+                        <th style="width: 360px;">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for staff in staffs %}
+                    <tr>
+                        <td>{{ staff.id }}</td>
+                        <td>{{ staff.name }}</td>
+                        <td>{{ staff.username }}</td>
+                        <td>{{ staff.email }}</td>
+                        <td>{{ staff.role }}</td>
+                        <td>{{ 'Có' if staff.is_active else 'Không' }}</td>
+                        <td>
+                            <div class="d-flex gap-2">
+                                <form action="/manager/staff/{{ staff.id }}/update" method="post" class="d-flex gap-2">
+                                    <select name="role" class="form-select form-select-sm">
+                                        <option value="staff" {% if staff.role == 'staff' %}selected{% endif %}>Staff</option>
+                                        <option value="manager" {% if staff.role == 'manager' %}selected{% endif %}>Manager</option>
+                                        <option value="admin" {% if staff.role == 'admin' %}selected{% endif %}>Admin</option>
+                                    </select>
+                                    <input type="password" name="password" class="form-control form-control-sm" placeholder="Mật khẩu mới (tùy chọn)">
+                                    <div class="form-check form-switch mt-1">
+                                        <input class="form-check-input" type="checkbox" name="is_active" {% if staff.is_active %}checked{% endif %}>
+                                    </div>
+                                    <button type="submit" class="btn btn-sm btn-primary">Lưu</button>
+                                </form>
+                                <form action="/manager/staff/{{ staff.id }}/delete" method="post" class="m-0">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Xóa nhân sự này?');">Xóa</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not staffs %}
+                    <tr>
+                        <td colspan="7" class="text-muted">Chưa có dữ liệu nhân sự.</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

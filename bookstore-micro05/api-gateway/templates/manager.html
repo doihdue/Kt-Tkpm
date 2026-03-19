@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Bảng điều khiển quản lý{% endblock %}
+{% block content %}
+<section class="customer-hero customer-hero-compact mb-4">
+    <div class="customer-hero__content">
+        <span class="customer-kicker">Khu vực manager</span>
+        <h1 class="customer-hero__title">Bảng điều khiển quản trị vận hành</h1>
+        <p class="customer-hero__subtitle">Theo dõi khách hàng, nhân sự và doanh thu từ một nơi tập trung.</p>
+    </div>
+</section>
+
+<div class="row g-4">
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card metric-card metric-customer">
+            <div class="card-header"><i class="bi bi-people me-2"></i>Khách hàng</div>
+            <div class="card-body">
+                <h5 class="card-title">{{ stats.customer_count }}</h5>
+                <p class="card-text">Tổng tài khoản khách hàng hiện có.</p>
+                <a href="/manager/customers" class="btn btn-outline-light">Xem chi tiết</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card metric-card metric-order">
+            <div class="card-header"><i class="bi bi-receipt me-2"></i>Đơn hàng</div>
+            <div class="card-body">
+                <h5 class="card-title">{{ stats.order_count }}</h5>
+                <p class="card-text">Số lượng đơn hàng toàn hệ thống.</p>
+                <a href="/manager/revenue" class="btn btn-outline-light">Xem doanh thu</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card metric-card metric-review">
+            <div class="card-header"><i class="bi bi-cash-stack me-2"></i>Doanh thu</div>
+            <div class="card-body">
+                <h5 class="card-title">{{ "{:,.0f}".format(stats.total_revenue|float) }}₫</h5>
+                <p class="card-text">Tổng doanh thu từ đơn chưa hủy.</p>
+                <a href="/manager/revenue" class="btn btn-outline-light">Phân tích</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card metric-card metric-category">
+            <div class="card-header"><i class="bi bi-person-badge me-2"></i>Nhân sự</div>
+            <div class="card-body">
+                <h5 class="card-title">{{ stats.staff_count }}</h5>
+                <p class="card-text">Số tài khoản staff/manager.</p>
+                <a href="/manager/staff" class="btn btn-outline-light">Quản lý</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

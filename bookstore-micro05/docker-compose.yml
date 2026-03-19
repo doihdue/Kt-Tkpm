@@ -1,4 +1,36 @@
 services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "8012:8000"
+    environment:
+      CUSTOMER_SERVICE_URL: "http://customer-service:8000"
+      STAFF_SERVICE_URL: "http://staff-service:8000"
+      JWT_SECRET: "bookstore_dev_secret"
+      JWT_EXPIRE_MINUTES: "120"
+    depends_on:
+      customer-service:
+        condition: service_healthy
+      staff-service:
+        condition: service_healthy
+    command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/auth/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   customer-service:
     build: ./customer-service
     ports:
@@ -79,6 +111,10 @@ services:
       ADMIN_USER: "admin"
       ADMIN_EMAIL: "admin@bookstore.com"
       ADMIN_PASSWORD: "SecurePassword123"
+      STAFF_USER: "staff"
+      STAFF_EMAIL: "staff@bookstore.com"
+      STAFF_PASSWORD: "StaffPassword123"
+      STAFF_NAME: "Default Staff"
     command: >
       bash -c "pip install pymysql &&
       python manage.py makemigrations &&
@@ -98,12 +134,16 @@ services:
     environment:
       # Sử dụng driver mysqlclient mặc định hoặc pymysql nếu có
       DB_URL: "mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-123456}@${MYSQL_HOST:-host.docker.internal}:${MYSQL_PORT:-3306}/order_db"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/%2F"
+      EVENT_EXCHANGE: "bookstore.events"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     command: >
       bash -c "pip install pymysql sqlalchemy httpx &&
       uvicorn app:app --host 0.0.0.0 --port 8000"
     healthcheck:
-      # Check /docs endpoint which is default in FastAPI
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')\""]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -114,10 +154,13 @@ services:
       - "8006:8000"
     depends_on:
       - order-service
+      - rabbitmq
+    environment:
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/%2F"
+      EVENT_EXCHANGE: "bookstore.events"
     command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
     healthcheck:
-      # Check /docs endpoint which is default in FastAPI
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')\""]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/payments/health')\""]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -129,10 +172,13 @@ services:
       - "8007:8000"
     depends_on:
       - order-service
+      - rabbitmq
+    environment:
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/%2F"
+      EVENT_EXCHANGE: "bookstore.events"
     command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
     healthcheck:
-      # Check /docs endpoint which is default in FastAPI
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')\""]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/shipments/health')\""]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -194,6 +240,8 @@ services:
     ports:
       - "8080:8000"
     depends_on:
+      auth-service:
+        condition: service_healthy
       customer-service:
         condition: service_healthy
       cart-service:
@@ -216,4 +264,6 @@ services:
         condition: service_healthy
       recommender-ai-service:
         condition: service_healthy
+    environment:
+      AUTH_SERVICE_URL: "http://auth-service:8000"
     command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
