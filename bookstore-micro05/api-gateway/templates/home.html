@@ -18,8 +18,11 @@
 <section class="product-showcase card shadow-sm border-0 mb-4 customer-surface">
     <div class="card-body p-4">
         <div class="showcase-header mb-3">
-            <h2 class="h4 mb-1">Gợi ý cho bạn</h2>
-            <p class="text-muted mb-0">Danh sách được đề xuất bởi recommender-ai-service.</p>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <h2 class="h4 mb-0">Gợi ý cho bạn</h2>
+                <span class="badge rounded-pill text-bg-primary">AI cá nhân hóa</span>
+            </div>
+            <p class="text-muted mb-0">Gợi ý được tính từ lượt xem gần đây và lịch sử mua hàng của bạn.</p>
         </div>
 
         {% if recommended_books %}

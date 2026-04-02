@@ -13,7 +13,7 @@ Một dự án microservices được xây dựng bằng Django và FastAPI cho 
 8. **manager-service**: Quản lý tác vụ vận hành và quản trị (FastAPI)
 9. **catalog-service**: Quản lý danh mục nội dung/sản phẩm (FastAPI)
 10. **comment-rate-service**: Quản lý bình luận và đánh giá sách (FastAPI)
-11. **recommender-ai-service**: Gợi ý sách theo heuristic AI (FastAPI)
+11. **recommender-ai-service**: Gợi ý sách bằng Hybrid AI (content-based + collaborative signals) (FastAPI)
 12. **api-gateway**: Cổng giao tiếp và giao diện người dùng (FastAPI)
 
 ## Functional Requirements
@@ -155,3 +155,56 @@ Each service uses the following environment variables (configured in docker-comp
 ### Staff Service
 - **Staff**: id, name, email, role, is_active
 
+<<<<<<< HEAD
+=======
+## Troubleshooting
+
+### Services won't start
+1. Ensure Docker is running: `docker info`
+2. Check ports are available: 8001-8004, 5432-5435
+3. View logs: `docker-compose logs [service-name]`
+
+### Database connection errors
+1. Wait for databases to initialize (20-30 seconds on first run)
+2. Check PostgreSQL containers: `docker ps`
+3. Verify environment variables in docker-compose.yml
+
+### Port conflicts
+If ports are already in use, update docker-compose.yml:
+```yaml
+ports:
+  - "8005:8000"  # Change 8005 to available port
+```
+
+## AI Recommendation (Applied)
+- Recommender service now fetches real books from book-service.
+- Builds text features from title, author, description, category.
+- Uses TF-IDF and cosine similarity to rank unseen books by user viewing history.
+- Ingests customer order history from order-service as collaborative signal.
+- Adds popularity boost from global order events.
+- Uses weighted hybrid scoring: content + collaborative + popularity.
+- Stores user history and recommendation events to improve future calls.
+- Includes cold-start fallback when customer has little or no history.
+
+## Outbox + Kafka (Applied)
+- order-service now uses Outbox Pattern with table order_outbox to persist domain events before publish.
+- A background dispatcher reads pending events and retries failed publishes.
+- Events are published to RabbitMQ and Kafka topic bookstore.events.
+- Kafka and Zookeeper services are added in docker-compose for local development.
+
+## Future Enhancements
+- Implement authentication/authorization
+- Persist manager/catalog/comment-rate/recommender data to MySQL
+- Integrate recommender-ai-service with real user interaction data
+- Implement inter-service communication patterns
+- Add message queues (RabbitMQ/Kafka)
+- Implement caching (Redis)
+- Add monitoring and logging (ELK/Prometheus)
+
+## Development Notes
+- Each service has its own database to maintain independence
+- REST calls between services use service names (e.g., `http://cart-service:8000`)
+- Migrations are run automatically when services start
+- Tests can be run with: `docker-compose exec [service-name] python manage.py test`
+- manager-service, catalog-service, comment-rate-service, recommender-ai-service now persist data in MySQL using SQLAlchemy.
+>>>>>>> 15e8e2a (init project)

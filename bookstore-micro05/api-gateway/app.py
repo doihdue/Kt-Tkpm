@@ -114,7 +114,7 @@ async def get_order_by_code(order_code: str):
     return order
 
 
-async def fetch_home_sections(user: Optional[dict] = None):
+async def fetch_home_sections(user: Optional[dict] = None, recent_viewed_book_ids: Optional[List[int]] = None):
     featured_books = []
     newest_books = []
     recommended_books = []
@@ -167,10 +167,30 @@ async def fetch_home_sections(user: Optional[dict] = None):
 
             # Personalized recommendations from recommender-ai-service.
             if user and user.get("role") == "customer" and user.get("id"):
+                purchased_book_ids = []
+                try:
+                    orders_res = await client.get(
+                        f"{ORDER_SERVICE_URL}/api/orders?customer_id={int(user.get('id'))}"
+                    )
+                    if orders_res.status_code == 200:
+                        for order in orders_res.json():
+                            for item in order.get("items", []):
+                                try:
+                                    purchased_book_ids.append(int(item.get("book_id")))
+                                except (TypeError, ValueError):
+                                    continue
+                        purchased_book_ids = list(dict.fromkeys(purchased_book_ids))
+                except (httpx.RequestError, httpx.HTTPStatusError, ValueError):
+                    purchased_book_ids = []
+
                 try:
                     rec_res = await client.post(
                         f"{RECOMMENDER_AI_SERVICE_URL}/api/recommendations",
-                        json={"customer_id": int(user.get("id")), "viewed_book_ids": []},
+                        json={
+                            "customer_id": int(user.get("id")),
+                            "viewed_book_ids": recent_viewed_book_ids or [],
+                            "purchased_book_ids": purchased_book_ids,
+                        },
                     )
                     if rec_res.status_code == 200:
                         rec_items = rec_res.json()
@@ -200,9 +220,10 @@ async def home(request: Request):
             return RedirectResponse(url="/manager")
 
     user = user_session if user_session else None
+    recent_viewed_book_ids = request.session.get("recent_viewed_book_ids", [])
     featured_books, newest_books, recommended_books = [], [], []
     try:
-        featured_books, newest_books, recommended_books = await fetch_home_sections(user)
+        featured_books, newest_books, recommended_books = await fetch_home_sections(user, recent_viewed_book_ids)
     except (httpx.RequestError, httpx.HTTPStatusError):
         pass
 
@@ -443,6 +464,24 @@ async def book_detail(request: Request, book_id: int, user: dict = Depends(get_c
             for review in reviews:
                 customer_id = review.get("customer_id")
                 review["customer_name"] = customer_name_map.get(customer_id)
+
+            # Track customer view behavior for personalized recommendations.
+            if user and user.get("role") == "customer" and user.get("id"):
+                try:
+                    await client.post(
+                        f"{RECOMMENDER_AI_SERVICE_URL}/api/recommendations/track-view",
+                        json={"customer_id": int(user.get("id")), "book_id": int(book_id)},
+                    )
+                except (httpx.RequestError, ValueError):
+                    pass
+
+                viewed_session = request.session.get("recent_viewed_book_ids", [])
+                if not isinstance(viewed_session, list):
+                    viewed_session = []
+                viewed_session = [int(v) for v in viewed_session if isinstance(v, int)]
+                viewed_session.append(int(book_id))
+                # Keep recent unique list, bounded to limit session size.
+                request.session["recent_viewed_book_ids"] = list(dict.fromkeys(viewed_session))[-50:]
 
     except (httpx.RequestError, httpx.HTTPStatusError) as e:
         print(f"Error fetching book detail or reviews: {e}")

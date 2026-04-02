@@ -2,13 +2,16 @@ import json
 import os
 import secrets
 import string
+import threading
+import time
+from datetime import datetime
 from typing import List, Optional
 from uuid import uuid4
 
 import pika
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, Float, Integer, String, Text, create_engine, inspect, text
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine, inspect, text
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 app = FastAPI(title="Order Service")
@@ -16,6 +19,11 @@ app = FastAPI(title="Order Service")
 DB_URL = os.getenv("DB_URL", "mysql+pymysql://root:123456@db:3306/order_db")
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/%2F")
 EVENT_EXCHANGE = os.getenv("EVENT_EXCHANGE", "bookstore.events")
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
+KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "bookstore.events")
+OUTBOX_POLL_SECONDS = float(os.getenv("OUTBOX_POLL_SECONDS", "2"))
+OUTBOX_BATCH_SIZE = int(os.getenv("OUTBOX_BATCH_SIZE", "50"))
+OUTBOX_MAX_RETRIES = int(os.getenv("OUTBOX_MAX_RETRIES", "20"))
 
 engine = create_engine(DB_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -34,6 +42,21 @@ class OrderRow(Base):
     shipping_address = Column(Text, nullable=True)
     payment_id = Column(String(100), nullable=True)
     shipping_id = Column(String(100), nullable=True)
+
+
+class OutboxEventRow(Base):
+    __tablename__ = "order_outbox"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    aggregate_type = Column(String(50), nullable=False, index=True)
+    aggregate_id = Column(String(64), nullable=False, index=True)
+    event_type = Column(String(100), nullable=False, index=True)
+    payload = Column(Text, nullable=False)
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    retry_count = Column(Integer, nullable=False, default=0)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    published_at = Column(DateTime, nullable=True)
 
 
 Base.metadata.create_all(bind=engine)
@@ -87,7 +110,7 @@ def rabbit_params() -> pika.URLParameters:
     return pika.URLParameters(RABBITMQ_URL)
 
 
-def publish_event(event_type: str, payload: dict):
+def _publish_rabbit(event_type: str, payload: dict):
     try:
         connection = pika.BlockingConnection(rabbit_params())
         channel = connection.channel()
@@ -95,8 +118,73 @@ def publish_event(event_type: str, payload: dict):
         message = json.dumps({"event": event_type, "payload": payload})
         channel.basic_publish(exchange=EVENT_EXCHANGE, routing_key="", body=message)
         connection.close()
+        return True, None
     except Exception as exc:
-        print(f"[order-service] event publish failed: {exc}")
+        return False, str(exc)
+
+
+def _publish_kafka(event_type: str, payload: dict):
+    try:
+        from kafka import KafkaProducer
+
+        producer = KafkaProducer(
+            bootstrap_servers=[server.strip() for server in KAFKA_BOOTSTRAP_SERVERS.split(",") if server.strip()],
+            value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+            key_serializer=lambda v: v.encode("utf-8") if v else None,
+        )
+        producer.send(
+            KAFKA_TOPIC,
+            key=event_type,
+            value={"event": event_type, "payload": payload},
+        )
+        producer.flush(timeout=5)
+        producer.close()
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
+
+
+def publish_event(event_type: str, payload: dict):
+    rabbit_ok, rabbit_err = _publish_rabbit(event_type, payload)
+    kafka_ok, kafka_err = _publish_kafka(event_type, payload)
+
+    if rabbit_ok and kafka_ok:
+        return True, None
+
+    errors = []
+    if not rabbit_ok:
+        errors.append(f"rabbit: {rabbit_err}")
+    if not kafka_ok:
+        errors.append(f"kafka: {kafka_err}")
+    return False, "; ".join(errors)
+
+
+def _append_outbox_event(
+    db: Session,
+    aggregate_type: str,
+    aggregate_id: str,
+    event_type: str,
+    payload: dict,
+):
+    db.add(
+        OutboxEventRow(
+            aggregate_type=aggregate_type,
+            aggregate_id=aggregate_id,
+            event_type=event_type,
+            payload=json.dumps(payload),
+            status="pending",
+            retry_count=0,
+        )
+    )
+
+
+def enqueue_outbox_event(aggregate_type: str, aggregate_id: str, event_type: str, payload: dict):
+    db: Session = SessionLocal()
+    try:
+        _append_outbox_event(db, aggregate_type, aggregate_id, event_type, payload)
+        db.commit()
+    finally:
+        db.close()
 
 
 def rpc_call(queue_name: str, payload: dict, timeout_seconds: int = 12) -> dict:
@@ -183,16 +271,66 @@ def row_to_order(row: OrderRow) -> Order:
     )
 
 
-def _db_update(order_id: str, **kwargs):
+def _db_update(order_id: str, event_type: Optional[str] = None, event_payload: Optional[dict] = None, **kwargs):
     db: Session = SessionLocal()
     try:
         row = db.query(OrderRow).filter(OrderRow.id == order_id).first()
         if row:
             for key, val in kwargs.items():
                 setattr(row, key, val)
+            if event_type and event_payload is not None:
+                _append_outbox_event(db, "order", order_id, event_type, event_payload)
             db.commit()
     finally:
         db.close()
+
+
+def dispatch_outbox_once():
+    db: Session = SessionLocal()
+    try:
+        events = (
+            db.query(OutboxEventRow)
+            .filter(OutboxEventRow.status.in_(["pending", "failed"]))
+            .filter(OutboxEventRow.retry_count < OUTBOX_MAX_RETRIES)
+            .order_by(OutboxEventRow.id.asc())
+            .limit(OUTBOX_BATCH_SIZE)
+            .all()
+        )
+
+        for event in events:
+            try:
+                payload = json.loads(event.payload or "{}")
+            except (TypeError, ValueError):
+                payload = {}
+
+            ok, err = publish_event(event.event_type, payload)
+            if ok:
+                event.status = "published"
+                event.published_at = datetime.utcnow()
+                event.last_error = None
+            else:
+                event.status = "failed"
+                event.retry_count = (event.retry_count or 0) + 1
+                event.last_error = (err or "publish failed")[:2000]
+
+        db.commit()
+    finally:
+        db.close()
+
+
+def outbox_dispatch_loop():
+    while True:
+        try:
+            dispatch_outbox_once()
+        except Exception as exc:
+            print(f"[order-service] outbox dispatcher error: {exc}")
+        time.sleep(OUTBOX_POLL_SECONDS)
+
+
+@app.on_event("startup")
+def startup_event():
+    worker = threading.Thread(target=outbox_dispatch_loop, daemon=True)
+    worker.start()
 
 
 def compensate(payment_id: Optional[str], shipping_id: Optional[str], order_id: str):
@@ -241,11 +379,16 @@ def create_order(order: Order):
             shipping_id=None,
         )
         db.add(row)
+        _append_outbox_event(
+            db,
+            "order",
+            order.id,
+            "order.pending",
+            {"order_id": order.id, "order_code": order.order_code},
+        )
         db.commit()
     finally:
         db.close()
-
-    publish_event("order.pending", {"order_id": order.id, "order_code": order.order_code})
 
     payment_id = None
     shipping_id = None
@@ -261,8 +404,12 @@ def create_order(order: Order):
             },
         )
         if not payment_resp.get("ok"):
-            _db_update(order.id, status="payment_failed")
-            publish_event("order.payment_failed", {"order_id": order.id, "detail": payment_resp.get("error")})
+            _db_update(
+                order.id,
+                status="payment_failed",
+                event_type="order.payment_failed",
+                event_payload={"order_id": order.id, "detail": payment_resp.get("error")},
+            )
             raise HTTPException(status_code=503, detail=f"Payment reserve failed: {payment_resp.get('error')}")
         payment_id = payment_resp.get("payment_id")
 
@@ -275,11 +422,20 @@ def create_order(order: Order):
             },
         )
         if not shipping_resp.get("ok"):
-            _db_update(order.id, status="shipping_failed", payment_id=payment_id)
-            publish_event("order.shipping_failed", {"order_id": order.id, "detail": shipping_resp.get("error")})
+            _db_update(
+                order.id,
+                status="shipping_failed",
+                payment_id=payment_id,
+                event_type="order.shipping_failed",
+                event_payload={"order_id": order.id, "detail": shipping_resp.get("error")},
+            )
             compensate(payment_id=payment_id, shipping_id=None, order_id=order.id)
-            _db_update(order.id, status="compensated")
-            publish_event("order.compensated", {"order_id": order.id, "reason": "shipping_failed"})
+            _db_update(
+                order.id,
+                status="compensated",
+                event_type="order.compensated",
+                event_payload={"order_id": order.id, "reason": "shipping_failed"},
+            )
             raise HTTPException(status_code=503, detail=f"Shipping reserve failed: {shipping_resp.get('error')}")
         shipping_id = shipping_resp.get("shipping_id")
 
@@ -287,8 +443,14 @@ def create_order(order: Order):
             raise RuntimeError("Simulated confirm failure")
 
         final_status = order.status or "processing"
-        _db_update(order.id, status=final_status, payment_id=payment_id, shipping_id=shipping_id)
-        publish_event("order.confirmed", {"order_id": order.id, "order_code": order.order_code, "status": final_status})
+        _db_update(
+            order.id,
+            status=final_status,
+            payment_id=payment_id,
+            shipping_id=shipping_id,
+            event_type="order.confirmed",
+            event_payload={"order_id": order.id, "order_code": order.order_code, "status": final_status},
+        )
 
         order.status = final_status
         order.payment_id = payment_id
@@ -298,11 +460,21 @@ def create_order(order: Order):
     except HTTPException:
         raise
     except Exception as exc:
-        _db_update(order.id, status="confirm_failed", payment_id=payment_id, shipping_id=shipping_id)
-        publish_event("order.confirm_failed", {"order_id": order.id, "detail": str(exc)})
+        _db_update(
+            order.id,
+            status="confirm_failed",
+            payment_id=payment_id,
+            shipping_id=shipping_id,
+            event_type="order.confirm_failed",
+            event_payload={"order_id": order.id, "detail": str(exc)},
+        )
         compensate(payment_id=payment_id, shipping_id=shipping_id, order_id=order.id)
-        _db_update(order.id, status="compensated")
-        publish_event("order.compensated", {"order_id": order.id, "reason": "confirm_failed"})
+        _db_update(
+            order.id,
+            status="compensated",
+            event_type="order.compensated",
+            event_payload={"order_id": order.id, "reason": "confirm_failed"},
+        )
         raise HTTPException(status_code=503, detail="Order saga failed and was compensated")
 
 
