@@ -2,3 +2,6 @@ fastapi
 uvicorn[standard]
 sqlalchemy
 pymysql
+numpy<2
+scikit-learn
+tensorflow==2.10.1

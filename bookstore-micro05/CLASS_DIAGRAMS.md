@@ -7,7 +7,7 @@ No explicit class definitions were found in this service. The gateway is functio
 ## auth-service
 
 ```mermaid
-classDiagram
+@startuml
     class LoginRequest {
       +username: str
       +password: str
@@ -26,7 +26,7 @@ classDiagram
 ## customer-service
 
 ```mermaid
-classDiagram
+@startuml
     class Customer {
       +id: int
       +name: str
@@ -63,7 +63,7 @@ classDiagram
 ## cart-service
 
 ```mermaid
-classDiagram
+@startuml
     class Cart {
       +id: int
       +customer_id: int (unique)
@@ -90,7 +90,7 @@ classDiagram
 ## book-service
 
 ```mermaid
-classDiagram
+@startuml
     class Category {
       +id: int
       +name: str
@@ -135,7 +135,7 @@ classDiagram
 ## staff-service
 
 ```mermaid
-classDiagram
+@startuml
     class Staff {
       +id: int
       +name: str
@@ -157,7 +157,7 @@ classDiagram
 ## catalog-service
 
 ```mermaid
-classDiagram
+@startuml
     class CatalogItemRow {
       +id: int
       +name: str
@@ -182,7 +182,7 @@ classDiagram
 ## order-service
 
 ```mermaid
-classDiagram
+@startuml
     class OrderRow {
       +id: str
       +order_code: str
@@ -226,7 +226,7 @@ classDiagram
 ## payment-service
 
 ```mermaid
-classDiagram
+@startuml
     class PaymentRequest {
       +order_id: str
       +amount: float
@@ -237,7 +237,7 @@ classDiagram
 ## shipping-service
 
 ```mermaid
-classDiagram
+@startuml
     class ShipmentRequest {
       +order_id: str
       +address: str
@@ -247,7 +247,7 @@ classDiagram
 ## manager-service
 
 ```mermaid
-classDiagram
+@startuml
     class ManagementTaskRow {
       +id: str
       +title: str
@@ -275,7 +275,7 @@ classDiagram
 ## comment-rate-service
 
 ```mermaid
-classDiagram
+@startuml
     class CommentRateRow {
       +id: str
       +book_id: int
@@ -309,7 +309,7 @@ classDiagram
 ## recommender-ai-service
 
 ```mermaid
-classDiagram
+@startuml
     class RecommendationEventRow {
       +id: str
       +customer_id: int

@@ -1,7 +1,9 @@
 import json
+import importlib
 import math
 import os
 import re
+import threading
 import urllib.error
 import urllib.request
 from collections import defaultdict
@@ -15,6 +17,8 @@ from typing import Dict, List, Optional
 from sqlalchemy import Column, DateTime, Integer, String, Text, create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
+
+SentenceTransformer = None
 
 app = FastAPI(title="Recommender AI Service")
 
@@ -67,6 +71,17 @@ class UserPreferenceRow(Base):
     viewed_book_ids = Column(Text, nullable=False)
     viewed_book_counts = Column(Text, nullable=True)
     purchased_book_counts = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class KnowledgeVectorRow(Base):
+    __tablename__ = "recommender_knowledge_vectors"
+
+    id = Column(String(128), primary_key=True)
+    entity_type = Column(String(32), nullable=False, index=True)
+    entity_id = Column(String(64), nullable=False, index=True)
+    vector_json = Column(Text, nullable=False)
+    metadata_json = Column(Text, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -148,6 +163,18 @@ class TrackViewRequest(BaseModel):
     book_id: int
 
 
+class ChatRequest(BaseModel):
+    customer_id: int
+    message: str
+    top_k: int = 3
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    retrieved_products: List[dict]
+    model_source: str
+
+
 BOOK_POOL = [
     {"book_id": 1, "title": "Classic Fiction", "author": "Unknown", "description": "classic story fiction"},
     {"book_id": 2, "title": "Python Engineering", "author": "Unknown", "description": "technology python software"},
@@ -160,6 +187,313 @@ BOOK_POOL = [
 
 def tokenize(text_value: str) -> List[str]:
     return re.findall(r"[a-z0-9]+", (text_value or "").lower())
+
+
+EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "64"))
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2")
+_embedding_lock = threading.Lock()
+_embedding_model = None
+_deep_model_lock = threading.Lock()
+_deep_model = None
+_deep_model_error = None
+DEEP_MODEL_DIR = os.getenv("DEEP_MODEL_DIR", os.path.join(os.path.dirname(__file__), "models"))
+DEEP_MODEL_ENABLED = os.getenv("DEEP_MODEL_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+
+
+def _get_embedding_model():
+    global _embedding_model
+    global SentenceTransformer
+
+    if SentenceTransformer is None:
+        try:
+            module = importlib.import_module("sentence_transformers")
+            SentenceTransformer = getattr(module, "SentenceTransformer", None)
+        except Exception:
+            SentenceTransformer = None
+
+    if SentenceTransformer is None:
+        return None
+    if _embedding_model is not None:
+        return _embedding_model
+
+    with _embedding_lock:
+        if _embedding_model is None:
+            _embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    return _embedding_model
+
+
+def _load_deep_model():
+    global _deep_model
+    global _deep_model_error
+
+    if not DEEP_MODEL_ENABLED:
+        return None
+    if _deep_model is not None:
+        return _deep_model
+    if _deep_model_error is not None:
+        return None
+
+    with _deep_model_lock:
+        if _deep_model is not None:
+            return _deep_model
+        if _deep_model_error is not None:
+            return None
+
+        model_file = os.path.join(DEEP_MODEL_DIR, "ncf_graph_model.h5")
+        if not os.path.exists(model_file):
+            _deep_model_error = f"Missing model file: {model_file}"
+            return None
+
+        try:
+            module = importlib.import_module("deep_learning_model")
+            model_cls = getattr(module, "NCFGraphRecommenderModel")
+            deep_model = model_cls(embedding_dim=64, num_users=300, num_items=2000)
+            deep_model.load(DEEP_MODEL_DIR)
+            if deep_model.model is None:
+                _deep_model_error = "Deep model loaded without model graph"
+                return None
+            _deep_model = deep_model
+            return _deep_model
+        except Exception as ex:
+            _deep_model_error = str(ex)
+            return None
+
+
+def _build_deep_context_feature(
+    candidate_id: int,
+    seen: set[int],
+    view_counts: Dict[int, float],
+    purchase_counts: Dict[int, float],
+    popularity: Dict[int, float],
+    max_popularity: float,
+) -> List[float]:
+    user_history_size = len(seen)
+    item_popularity = popularity.get(candidate_id, 0.0)
+    interaction_count = view_counts.get(candidate_id, 0.0) + purchase_counts.get(candidate_id, 0.0)
+    user_diversity = len(seen)
+    time_factor = min(interaction_count / 5.0, 1.0)
+    strength = min((0.3 * view_counts.get(candidate_id, 0.0)) + (0.8 * purchase_counts.get(candidate_id, 0.0)), 1.0)
+
+    if max_popularity > 0:
+        normalized_popularity = min(item_popularity / max_popularity, 1.0)
+    else:
+        normalized_popularity = 0.0
+
+    return [
+        min(user_history_size / 50.0, 1.0),
+        normalized_popularity,
+        min(interaction_count / 3.0, 1.0),
+        min(user_diversity / 50.0, 1.0),
+        time_factor,
+        math.tanh(user_history_size / 50.0),
+        math.tanh(normalized_popularity),
+        strength,
+    ]
+
+
+def _predict_deep_scores(
+    customer_id: int,
+    candidate_ids: List[int],
+    seen: set[int],
+    view_counts: Dict[int, float],
+    purchase_counts: Dict[int, float],
+    popularity: Dict[int, float],
+    max_popularity: float,
+) -> Dict[int, float]:
+    deep_model = _load_deep_model()
+    if deep_model is None:
+        return {}
+
+    if customer_id <= 0 or customer_id > deep_model.num_users:
+        return {}
+
+    valid_ids = [cid for cid in candidate_ids if 0 < cid <= deep_model.num_items]
+    if not valid_ids:
+        return {}
+
+    user_ids = [customer_id] * len(valid_ids)
+    context_features = [
+        _build_deep_context_feature(
+            candidate_id=cid,
+            seen=seen,
+            view_counts=view_counts,
+            purchase_counts=purchase_counts,
+            popularity=popularity,
+            max_popularity=max_popularity,
+        )
+        for cid in valid_ids
+    ]
+
+    try:
+        predictions = deep_model.predict_batch(user_ids, valid_ids, context_features)
+        return {cid: float(score) for cid, score in zip(valid_ids, predictions)}
+    except Exception:
+        return {}
+
+
+def _normalize_dense(vec: List[float]) -> List[float]:
+    norm = math.sqrt(sum(v * v for v in vec))
+    if norm <= 0:
+        return vec
+    return [v / norm for v in vec]
+
+
+def _hash_embedding(text_value: str, dim: int = EMBEDDING_DIM) -> List[float]:
+    vec = [0.0] * max(8, dim)
+    tokens = tokenize(text_value)
+    if not tokens:
+        return vec
+
+    for token in tokens:
+        idx = abs(hash(token)) % len(vec)
+        sign = 1.0 if (hash(token + "_sign") % 2 == 0) else -1.0
+        vec[idx] += sign
+
+    return _normalize_dense(vec)
+
+
+def encode_text_embedding(text_value: str) -> tuple[List[float], str]:
+    model = _get_embedding_model()
+    if model is None:
+        return _hash_embedding(text_value), "hash-fallback"
+
+    try:
+        embedding = model.encode([text_value], normalize_embeddings=True)[0]
+        return [float(x) for x in embedding.tolist()], "transformer"
+    except Exception:
+        return _hash_embedding(text_value), "hash-fallback"
+
+
+def cosine_similarity_dense(a: List[float], b: List[float]) -> float:
+    if not a or not b:
+        return 0.0
+    size = min(len(a), len(b))
+    if size == 0:
+        return 0.0
+    return float(sum(a[i] * b[i] for i in range(size)))
+
+
+def _to_int(raw_value: object) -> Optional[int]:
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_json_dict(raw: Optional[str]) -> Dict[str, object]:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def upsert_knowledge_vector(
+    db: Session,
+    entity_type: str,
+    entity_id: str,
+    vector: List[float],
+    metadata: Optional[Dict[str, object]] = None,
+) -> None:
+    row_id = f"{entity_type}:{entity_id}"
+    now = datetime.utcnow()
+    existing = db.query(KnowledgeVectorRow).filter(KnowledgeVectorRow.id == row_id).first()
+    if existing:
+        existing.vector_json = json.dumps(vector)
+        existing.metadata_json = json.dumps(metadata or {})
+        existing.updated_at = now
+    else:
+        db.add(
+            KnowledgeVectorRow(
+                id=row_id,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                vector_json=json.dumps(vector),
+                metadata_json=json.dumps(metadata or {}),
+                updated_at=now,
+            )
+        )
+
+
+def build_behavior_text(customer_id: int, viewed_ids: List[int], view_counts: Dict[int, float], purchase_counts: Dict[int, float]) -> str:
+    tokens = [f"user_{customer_id}"]
+    for bid in viewed_ids[-30:]:
+        tokens.append(f"view_book_{bid}")
+    for bid, cnt in sorted(view_counts.items(), key=lambda x: x[1], reverse=True)[:30]:
+        tokens.append(f"view_count_{bid}_{int(cnt)}")
+    for bid, cnt in sorted(purchase_counts.items(), key=lambda x: x[1], reverse=True)[:30]:
+        tokens.append(f"purchase_count_{bid}_{int(cnt)}")
+    return " ".join(tokens)
+
+
+def sync_product_vectors(db: Session, books: List[dict]) -> str:
+    model_source = "hash-fallback"
+    for book in books:
+        raw_id = book.get("id", book.get("book_id"))
+        book_id = _to_int(raw_id)
+        if book_id is None:
+            continue
+        product_text = _build_text_from_book(book)
+        vector, source = encode_text_embedding(product_text)
+        model_source = source
+        upsert_knowledge_vector(
+            db=db,
+            entity_type="product",
+            entity_id=str(book_id),
+            vector=vector,
+            metadata={
+                "book_id": book_id,
+                "title": book.get("title") or "",
+                "author": book.get("author") or "",
+                "category": book.get("category") or "",
+            },
+        )
+    return model_source
+
+
+def retrieve_top_products(db: Session, user_vector: List[float], top_k: int = 3) -> List[dict]:
+    rows = (
+        db.query(KnowledgeVectorRow)
+        .filter(KnowledgeVectorRow.entity_type == "product")
+        .all()
+    )
+    scored: List[dict] = []
+    for row in rows:
+        try:
+            vector = json.loads(row.vector_json)
+            if not isinstance(vector, list):
+                continue
+            product_vector = [float(v) for v in vector]
+        except (ValueError, TypeError):
+            continue
+
+        score = cosine_similarity_dense(user_vector, product_vector)
+        metadata = _safe_json_dict(row.metadata_json)
+        metadata["score"] = round(score, 4)
+        scored.append(metadata)
+
+    scored.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
+    return scored[: max(1, min(top_k, 10))]
+
+
+def generate_personalized_answer(message: str, products: List[dict]) -> str:
+    if not products:
+        return "Minh chua tim du du lieu de goi y ca nhan hoa. Ban co the xem them mot vai sach de he thong hoc so thich."
+
+    picks = []
+    for product in products[:3]:
+        title = str(product.get("title") or f"Book {product.get('book_id')}")
+        category = str(product.get("category") or "general")
+        score = float(product.get("score", 0.0))
+        picks.append(f"{title} ({category}, similarity={score:.2f})")
+
+    joined = "; ".join(picks)
+    return (
+        f"Dua tren hanh vi cua ban va cau hoi '{message}', minh de xuat: {joined}. "
+        "Neu ban muon, minh co the goi y theo muc gia hoac theo the loai cu the hon."
+    )
 
 
 def _safe_json_list(raw: Optional[str]) -> List[int]:
@@ -464,6 +798,26 @@ def get_recommendations(payload: RecommendRequest):
         all_orders = fetch_all_orders()
         pair_score, popularity = build_collaborative_signals(all_orders)
         max_popularity = max(popularity.values()) if popularity else 0.0
+        candidate_ids = []
+        for book in books:
+            raw_id = book.get("id", book.get("book_id"))
+            try:
+                candidate_id = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            if candidate_id in seen:
+                continue
+            candidate_ids.append(candidate_id)
+
+        deep_scores = _predict_deep_scores(
+            customer_id=payload.customer_id,
+            candidate_ids=candidate_ids,
+            seen=seen,
+            view_counts=view_counts,
+            purchase_counts=purchase_counts,
+            popularity=popularity,
+            max_popularity=max_popularity,
+        )
 
         candidates = []
         for book in books:
@@ -480,23 +834,28 @@ def get_recommendations(payload: RecommendRequest):
             content_score = cosine_similarity_sparse(profile_vec, candidate_vec)
             collab = collaborative_score(candidate_id, seen, pair_score)
             popularity_boost = (popularity.get(candidate_id, 0.0) / max_popularity) if max_popularity > 0 else 0.0
+            deep_score = deep_scores.get(candidate_id)
 
-            # Weighted hybrid score.
-            similarity = (0.65 * content_score) + (0.25 * collab) + (0.10 * popularity_boost)
+            # Prefer trained deep model scores when available.
+            if deep_score is not None:
+                similarity = (0.85 * deep_score) + (0.10 * collab) + (0.05 * popularity_boost)
+                reason = "Recommended by trained deep learning model"
+            else:
+                # Weighted hybrid score fallback.
+                similarity = (0.65 * content_score) + (0.25 * collab) + (0.10 * popularity_boost)
+                reason = explain_hybrid_reason(
+                    content_score=content_score,
+                    collab_score=collab,
+                    popularity_score=popularity_boost,
+                    base_reason=explain_reason(profile_vec, candidate_vec),
+                )
 
             # Cold-start fallback: still produce useful ranking when user has no history.
-            if not profile_vec:
+            if not profile_vec and deep_score is None:
                 if max_popularity > 0:
                     similarity = max(0.1, 0.8 * popularity_boost + 0.2 * max(0.0, 1.0 - (candidate_id * 0.01)))
                 else:
                     similarity = max(0.1, 1.0 - (candidate_id * 0.01))
-
-            reason = explain_hybrid_reason(
-                content_score=content_score,
-                collab_score=collab,
-                popularity_score=popularity_boost,
-                base_reason=explain_reason(profile_vec, candidate_vec),
-            )
 
             candidates.append(
                 Recommendation(
@@ -603,6 +962,102 @@ def recommendation_history(customer_id: int | None = None, limit: int = 20):
         db.close()
 
 
+@app.post("/api/ai/knowledge/sync")
+def sync_knowledge_base(customer_id: int | None = None):
+    db: Session = SessionLocal()
+    try:
+        books = fetch_books()
+        model_source = sync_product_vectors(db, books)
+
+        if customer_id is not None:
+            profile = db.query(UserPreferenceRow).filter(UserPreferenceRow.customer_id == customer_id).first()
+            viewed_ids = _safe_json_list(profile.viewed_book_ids) if profile else []
+            view_counts = _safe_json_count_map(profile.viewed_book_counts) if profile else {}
+            purchase_counts = _safe_json_count_map(profile.purchased_book_counts) if profile else {}
+            behavior_text = build_behavior_text(customer_id, viewed_ids, view_counts, purchase_counts)
+            user_vector, source = encode_text_embedding(behavior_text)
+            model_source = source
+            upsert_knowledge_vector(
+                db=db,
+                entity_type="user",
+                entity_id=str(customer_id),
+                vector=user_vector,
+                metadata={"customer_id": customer_id, "history_size": len(viewed_ids)},
+            )
+
+        db.commit()
+        product_count = db.query(KnowledgeVectorRow).filter(KnowledgeVectorRow.entity_type == "product").count()
+        return {
+            "ok": True,
+            "model_source": model_source,
+            "product_vectors": product_count,
+            "customer_id": customer_id,
+        }
+    finally:
+        db.close()
+
+
+@app.post("/api/ai/chat", response_model=ChatResponse)
+def ai_chat(payload: ChatRequest):
+    db: Session = SessionLocal()
+    try:
+        books = fetch_books()
+        model_source = sync_product_vectors(db, books)
+
+        profile = db.query(UserPreferenceRow).filter(UserPreferenceRow.customer_id == payload.customer_id).first()
+        viewed_ids = _safe_json_list(profile.viewed_book_ids) if profile else []
+        view_counts = _safe_json_count_map(profile.viewed_book_counts) if profile else {}
+        purchase_counts = _safe_json_count_map(profile.purchased_book_counts) if profile else {}
+        remote_purchase_counts = fetch_customer_purchase_counts(payload.customer_id)
+        for bid, cnt in remote_purchase_counts.items():
+            purchase_counts[bid] = max(purchase_counts.get(bid, 0.0), cnt)
+
+        behavior_text = build_behavior_text(
+            customer_id=payload.customer_id,
+            viewed_ids=viewed_ids,
+            view_counts=view_counts,
+            purchase_counts=purchase_counts,
+        )
+        query_text = f"{payload.message} {behavior_text}".strip()
+        user_vector, source = encode_text_embedding(query_text)
+        model_source = source
+
+        upsert_knowledge_vector(
+            db=db,
+            entity_type="user",
+            entity_id=str(payload.customer_id),
+            vector=user_vector,
+            metadata={
+                "customer_id": payload.customer_id,
+                "query": payload.message,
+                "history_size": len(viewed_ids),
+            },
+        )
+
+        retrieved = retrieve_top_products(db, user_vector=user_vector, top_k=payload.top_k)
+        answer = generate_personalized_answer(payload.message, retrieved)
+        db.commit()
+
+        return ChatResponse(
+            answer=answer,
+            retrieved_products=retrieved,
+            model_source=model_source,
+        )
+    finally:
+        db.close()
+
+
 @app.get("/api/recommendations/health")
 def recommender_health():
-    return {"service": "recommender-ai-service", "status": "ok"}
+    model_type = "transformer" if SentenceTransformer is not None else "hash-fallback"
+    deep_model_ready = _load_deep_model() is not None
+    return {
+        "service": "recommender-ai-service",
+        "status": "ok",
+        "ai_mode": model_type,
+        "embedding_model": EMBEDDING_MODEL_NAME,
+        "deep_model_enabled": DEEP_MODEL_ENABLED,
+        "deep_model_ready": deep_model_ready,
+        "deep_model_dir": DEEP_MODEL_DIR,
+        "deep_model_error": _deep_model_error,
+    }

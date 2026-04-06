@@ -36,6 +36,22 @@ services:
       timeout: 5s
       retries: 20
 
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_PASSWORD:-123456}"
+      MYSQL_DATABASE: "bookstore_bootstrap"
+    ports:
+      - "3307:3306"
+    command: --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p${MYSQL_PASSWORD:-123456} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
   auth-service:
     build: ./auth-service
     ports:
@@ -68,6 +84,9 @@ services:
       DB_PASSWORD: "${MYSQL_PASSWORD:-123456}"
       DB_HOST: "${MYSQL_HOST:-host.docker.internal}"
       DB_PORT: "${MYSQL_PORT:-3306}"
+    depends_on:
+      db:
+        condition: service_healthy
     command: >
       bash -c "pip install pymysql &&
       python manage.py makemigrations &&
@@ -90,6 +109,9 @@ services:
       DB_PASSWORD: "${MYSQL_PASSWORD:-123456}"
       DB_HOST: "${MYSQL_HOST:-host.docker.internal}"
       DB_PORT: "${MYSQL_PORT:-3306}"
+    depends_on:
+      db:
+        condition: service_healthy
     command: >
       bash -c "pip install pymysql &&
       python manage.py makemigrations &&
@@ -112,6 +134,9 @@ services:
       DB_PASSWORD: "${MYSQL_PASSWORD:-123456}"
       DB_HOST: "${MYSQL_HOST:-host.docker.internal}"
       DB_PORT: "${MYSQL_PORT:-3306}"
+    depends_on:
+      db:
+        condition: service_healthy
     command: >
       bash -c "pip install pymysql &&
       python manage.py makemigrations &&
@@ -141,6 +166,9 @@ services:
       STAFF_EMAIL: "staff@bookstore.com"
       STAFF_PASSWORD: "StaffPassword123"
       STAFF_NAME: "Default Staff"
+    depends_on:
+      db:
+        condition: service_healthy
     command: >
       bash -c "pip install pymysql &&
       python manage.py makemigrations &&
@@ -165,6 +193,8 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: "kafka:29092"
       KAFKA_TOPIC: "bookstore.events"
     depends_on:
+      db:
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
       kafka:
@@ -219,6 +249,9 @@ services:
       - "8008:8000"
     environment:
       DB_URL: "mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-123456}@${MYSQL_HOST:-host.docker.internal}:${MYSQL_PORT:-3306}/manager_db"
+    depends_on:
+      db:
+        condition: service_healthy
     command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/manager/health')\""]
@@ -232,6 +265,9 @@ services:
       - "8009:8000"
     environment:
       DB_URL: "mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-123456}@${MYSQL_HOST:-host.docker.internal}:${MYSQL_PORT:-3306}/catalog_db"
+    depends_on:
+      db:
+        condition: service_healthy
     command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/catalog/health')\""]
@@ -245,6 +281,9 @@ services:
       - "8010:8000"
     environment:
       DB_URL: "mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-123456}@${MYSQL_HOST:-host.docker.internal}:${MYSQL_PORT:-3306}/comment_rate_db"
+    depends_on:
+      db:
+        condition: service_healthy
     command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/comment-rates/health')\""]
@@ -258,12 +297,19 @@ services:
       - "8011:8000"
     environment:
       DB_URL: "mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-123456}@${MYSQL_HOST:-host.docker.internal}:${MYSQL_PORT:-3306}/recommender_db"
-    command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
+      BOOK_SERVICE_URL: "http://book-service:8000"
+      ORDER_SERVICE_URL: "http://order-service:8000"
+      TF_CPP_MIN_LOG_LEVEL: "2"
+      TF_FORCE_GPU_ALLOW_GROWTH: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: bash -c "python init_recommender.py && uvicorn app:app --host 0.0.0.0 --port 8000"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/recommendations/health')\""]
       interval: 30s
-      timeout: 10s
-      retries: 5
+      timeout: 15s
+      retries: 8
 
   api-gateway:
     build: ./api-gateway
@@ -297,3 +343,6 @@ services:
     environment:
       AUTH_SERVICE_URL: "http://auth-service:8000"
     command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
+
+volumes:
+  mysql_data:

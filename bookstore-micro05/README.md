@@ -155,8 +155,6 @@ Each service uses the following environment variables (configured in docker-comp
 ### Staff Service
 - **Staff**: id, name, email, role, is_active
 
-<<<<<<< HEAD
-=======
 ## Troubleshooting
 
 ### Services won't start
@@ -186,6 +184,14 @@ ports:
 - Stores user history and recommendation events to improve future calls.
 - Includes cold-start fallback when customer has little or no history.
 
+## Deep Learning + Knowledge Base + RAG (Applied)
+- Recommender service supports behavior/product embeddings via Transformer model (`sentence-transformers`) with a graceful hash fallback when the model is unavailable.
+- In Docker default setup, Transformer package is optional to keep image build stable and lightweight; service runs with fallback embeddings and can switch to Transformer by installing `sentence-transformers` in the container.
+- Adds a Knowledge Base table for dense vectors: user vectors and product vectors.
+- New endpoint `POST /api/ai/knowledge/sync` to sync product vectors and optional user vectors.
+- New endpoint `POST /api/ai/chat` to provide personalized answer generation using retrieval over vectorized products.
+- Health endpoint now reports AI mode (`transformer` or `hash-fallback`) and embedding model name.
+
 ## Outbox + Kafka (Applied)
 - order-service now uses Outbox Pattern with table order_outbox to persist domain events before publish.
 - A background dispatcher reads pending events and retries failed publishes.
@@ -207,4 +213,3 @@ ports:
 - Migrations are run automatically when services start
 - Tests can be run with: `docker-compose exec [service-name] python manage.py test`
 - manager-service, catalog-service, comment-rate-service, recommender-ai-service now persist data in MySQL using SQLAlchemy.
->>>>>>> 15e8e2a (init project)
