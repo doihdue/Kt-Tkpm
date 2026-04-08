@@ -35,3 +35,23 @@ class Review(models.Model):
 
     def __str__(self):
         return f"Review({self.book_id}, {self.rating})"
+
+
+class SearchBehaviorEvent(models.Model):
+    customer_id = models.IntegerField(db_index=True)
+    event_type = models.CharField(max_length=32, db_index=True)
+    query = models.CharField(max_length=255, blank=True)
+    book_id = models.IntegerField(null=True, blank=True, db_index=True)
+    book_ids = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class SearchUserProfile(models.Model):
+    customer_id = models.IntegerField(unique=True)
+    token_weights = models.JSONField(default=dict, blank=True)
+    book_weights = models.JSONField(default=dict, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)

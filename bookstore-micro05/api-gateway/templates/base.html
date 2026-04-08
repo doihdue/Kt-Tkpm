@@ -118,6 +118,116 @@
         </div>
     </main>
 
+    {% if user and user.role == 'customer' %}
+    <style>
+        #chatWidget {
+            position: fixed !important;
+            right: 20px !important;
+            bottom: 20px !important;
+            left: auto !important;
+            top: auto !important;
+            z-index: 2000 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: flex-end !important;
+            gap: 12px !important;
+            pointer-events: none !important;
+            margin: 0 !important;
+        }
+
+        #chatFabButton {
+            width: 58px !important;
+            height: 58px !important;
+            border-radius: 999px !important;
+            border: 0 !important;
+            padding: 0 !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            color: #fff !important;
+            background: linear-gradient(140deg, #0f766e, #0369a1) !important;
+            box-shadow: 0 18px 34px rgba(8, 64, 103, 0.36) !important;
+            pointer-events: auto !important;
+        }
+
+        #chatFabButton i {
+            font-size: 1.35rem !important;
+        }
+
+        #chatFabPanel {
+            width: min(400px, calc(100vw - 24px)) !important;
+            height: min(620px, calc(100vh - 110px)) !important;
+            border-radius: 20px !important;
+            overflow: hidden !important;
+            pointer-events: auto !important;
+        }
+
+        @media (max-width: 767px) {
+            #chatWidget {
+                right: 12px !important;
+                bottom: 12px !important;
+            }
+
+            #chatFabPanel {
+                width: calc(100vw - 20px) !important;
+                height: calc(100vh - 88px) !important;
+            }
+        }
+    </style>
+
+    <section
+        class="chat-fab-wrap"
+        id="chatWidget"
+        aria-label="Tư vấn AI"
+        style="position: fixed; right: 24px; bottom: 24px; z-index: 1300;"
+    >
+        <button type="button" class="chat-fab-btn" id="chatFabButton" aria-expanded="false" aria-controls="chatFabPanel" title="Mở chat tư vấn">
+            <i class="bi bi-chat-dots-fill"></i>
+        </button>
+
+        <div class="chat-fab-panel" id="chatFabPanel" hidden>
+            <div class="chat-fab-head">
+                <div>
+                    <h6 class="mb-0">Trợ lý chọn sách</h6>
+                    <p class="chat-fab-subtitle mb-0">
+                        <span class="chat-online-dot"></span> Online tư vấn theo mục tiêu học
+                    </p>
+                </div>
+                <button type="button" class="btn btn-sm chat-close-btn" id="chatFabClose" aria-label="Đóng chat">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+
+            <div class="chat-fab-body" id="chatFabBody">
+                <div class="chat-bubble bot">
+                    Chào bạn, mình có thể tư vấn sách theo thể loại, ngân sách và mục tiêu học tập.
+                </div>
+                <div class="chat-quick-prompts" id="chatQuickPrompts">
+                    <button type="button" class="chat-quick-chip" data-prompt="Gợi ý sách Python cho người mới bắt đầu">Python cho người mới</button>
+                    <button type="button" class="chat-quick-chip" data-prompt="Gợi ý sách kỹ năng sống dưới 150k">Kỹ năng sống dưới 150k</button>
+                    <button type="button" class="chat-quick-chip" data-prompt="Mình muốn sách luyện tư duy và tập trung">Sách luyện tư duy</button>
+                </div>
+            </div>
+
+            <form class="chat-fab-form" id="chatFabForm">
+                <div class="input-group">
+                    <input
+                        type="text"
+                        class="form-control"
+                        id="chatFabInput"
+                        placeholder="Ví dụ: tư vấn sách Python dưới 300k"
+                        maxlength="300"
+                        required
+                    >
+                    <button class="btn btn-primary" type="submit" id="chatFabSend">
+                        <i class="bi bi-send-fill"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </section>
+    {% endif %}
+
     <footer class="site-footer">
         <div class="container d-flex flex-column flex-md-row justify-content-between gap-2">
             <span>Bookstore Microservices UI</span>
@@ -126,5 +236,166 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    {% if user and user.role == 'customer' %}
+    <script>
+        (function () {
+            const chatWidget = document.getElementById('chatWidget');
+            const chatBtn = document.getElementById('chatFabButton');
+            const chatPanel = document.getElementById('chatFabPanel');
+            const closeBtn = document.getElementById('chatFabClose');
+            const chatForm = document.getElementById('chatFabForm');
+            const chatInput = document.getElementById('chatFabInput');
+            const chatBody = document.getElementById('chatFabBody');
+            const sendBtn = document.getElementById('chatFabSend');
+            const quickPrompts = document.getElementById('chatQuickPrompts');
+            const chatHistoryKey = 'bookstoreChatHistoryV1';
+            let chatHistory = [];
+
+            if (!chatBtn || !chatPanel || !chatForm || !chatInput || !chatBody || !sendBtn) {
+                return;
+            }
+
+            try {
+                const savedHistory = JSON.parse(localStorage.getItem(chatHistoryKey) || '[]');
+                if (Array.isArray(savedHistory)) {
+                    chatHistory = savedHistory.filter(function (item) {
+                        return item && typeof item === 'object' && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string' && item.content.trim();
+                    }).slice(-8);
+                }
+            } catch (error) {
+                chatHistory = [];
+            }
+
+            function persistHistory() {
+                try {
+                    localStorage.setItem(chatHistoryKey, JSON.stringify(chatHistory.slice(-8)));
+                } catch (error) {
+                    /* ignore storage errors */
+                }
+            }
+
+            if (chatWidget) {
+                chatWidget.style.position = 'fixed';
+                chatWidget.style.right = '20px';
+                chatWidget.style.bottom = '20px';
+                chatWidget.style.left = 'auto';
+                chatWidget.style.top = 'auto';
+                chatWidget.style.zIndex = '2000';
+            }
+
+            function appendBubble(text, role, shouldPersist = false) {
+                const bubble = document.createElement('div');
+                bubble.className = 'chat-bubble ' + role;
+                bubble.textContent = text;
+                chatBody.appendChild(bubble);
+                chatBody.scrollTop = chatBody.scrollHeight;
+
+                if (shouldPersist && (role === 'user' || role === 'assistant')) {
+                    chatHistory.push({ role: role, content: text });
+                    chatHistory = chatHistory.slice(-8);
+                    persistHistory();
+                }
+            }
+
+            function renderSavedHistory() {
+                if (!quickPrompts || !chatHistory.length) {
+                    return;
+                }
+
+                chatHistory.forEach(function (item) {
+                    const bubble = document.createElement('div');
+                    bubble.className = 'chat-bubble ' + item.role;
+                    bubble.textContent = item.content;
+                    chatBody.insertBefore(bubble, quickPrompts);
+                });
+            }
+
+            function setOpen(open) {
+                if (open) {
+                    chatPanel.hidden = false;
+                    chatBtn.classList.add('is-open');
+                    chatBtn.setAttribute('aria-expanded', 'true');
+                    setTimeout(() => chatInput.focus(), 80);
+                } else {
+                    chatBtn.classList.remove('is-open');
+                    chatPanel.hidden = true;
+                    chatBtn.setAttribute('aria-expanded', 'false');
+                }
+            }
+
+            chatBtn.addEventListener('click', function () {
+                setOpen(chatPanel.hidden);
+            });
+
+            if (closeBtn) {
+                closeBtn.addEventListener('click', function () {
+                    setOpen(false);
+                });
+            }
+
+            if (quickPrompts) {
+                renderSavedHistory();
+
+                quickPrompts.addEventListener('click', function (event) {
+                    const target = event.target;
+                    if (!target || !target.classList.contains('chat-quick-chip')) {
+                        return;
+                    }
+                    const prompt = target.getAttribute('data-prompt') || '';
+                    if (!prompt) {
+                        return;
+                    }
+                    setOpen(true);
+                    chatInput.value = prompt;
+                    chatForm.requestSubmit();
+                });
+            }
+
+            chatForm.addEventListener('submit', async function (event) {
+                event.preventDefault();
+                const message = chatInput.value.trim();
+                if (!message) {
+                    return;
+                }
+
+                appendBubble(message, 'user', true);
+                chatInput.value = '';
+                sendBtn.disabled = true;
+                appendBubble('Đang tìm gợi ý phù hợp cho bạn...', 'bot pending');
+
+                try {
+                    const historyPayload = chatHistory.slice(-8);
+                    const response = await fetch('/api/ai/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: message, top_k: 3, history: historyPayload })
+                    });
+
+                    const pending = chatBody.querySelector('.chat-bubble.pending');
+                    if (pending) {
+                        pending.remove();
+                    }
+
+                    if (!response.ok) {
+                        appendBubble('Hệ thống tư vấn đang bận, bạn thử lại sau nhé.', 'bot');
+                        return;
+                    }
+
+                    const data = await response.json();
+                    appendBubble(data.answer || 'Mình chưa có gợi ý phù hợp ngay lúc này.', 'bot', true);
+                } catch (error) {
+                    const pending = chatBody.querySelector('.chat-bubble.pending');
+                    if (pending) {
+                        pending.remove();
+                    }
+                    appendBubble('Không kết nối được dịch vụ tư vấn, vui lòng thử lại.', 'bot');
+                } finally {
+                    sendBtn.disabled = false;
+                    chatInput.focus();
+                }
+            });
+        })();
+    </script>
+    {% endif %}
 </body>
 </html>
