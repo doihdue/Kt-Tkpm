@@ -44,6 +44,9 @@
                     <a href="/account" class="btn btn-sm {% if request.url.path.startswith('/account') or request.url.path.startswith('/order/') %}btn-primary{% else %}btn-outline-secondary{% endif %}">
                         <i class="bi bi-person-lines-fill me-1"></i>Tài khoản
                     </a>
+                    <a href="/chatbot" class="btn btn-sm {% if request.url.path.startswith('/chatbot') %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                        <i class="bi bi-chat-dots me-1"></i>Chatbot
+                    </a>
                     {% endif %}
 
                     {% if user.role == 'staff' %}

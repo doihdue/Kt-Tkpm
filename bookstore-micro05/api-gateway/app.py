@@ -4,7 +4,7 @@ import httpx
 from typing import Optional, List
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, Request, Form, HTTPException, status, Depends
+from fastapi import FastAPI, Request, Form, HTTPException, status, Depends, Body
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -16,6 +16,14 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="templates")
 
+
+def render_template(name: str, context: dict, **kwargs):
+    """Compatibility helper for Starlette TemplateResponse signature changes."""
+    request = context.get("request")
+    if request is not None:
+        return templates.TemplateResponse(request=request, name=name, context=context, **kwargs)
+    return templates.TemplateResponse(name=name, context=context, **kwargs)
+
 # --- Service URLs ---
 # In a real production environment, these would come from environment variables.
 CUSTOMER_SERVICE_URL = "http://customer-service:8000"
@@ -25,6 +33,7 @@ ORDER_SERVICE_URL = "http://order-service:8000"
 STAFF_SERVICE_URL = "http://staff-service:8000"
 COMMENT_RATE_SERVICE_URL = "http://comment-rate-service:8000"
 RECOMMENDER_AI_SERVICE_URL = "http://recommender-ai-service:8000"
+CHATBOT_SERVICE_URL = os.getenv("CHATBOT_SERVICE_URL", "http://chatbot-service:8000")
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
 
 
@@ -227,7 +236,7 @@ async def home(request: Request):
     except (httpx.RequestError, httpx.HTTPStatusError):
         pass
 
-    return templates.TemplateResponse("home.html", {
+    return render_template("home.html", {
         "request": request,
         "user": user,
         "featured_books": featured_books,
@@ -238,7 +247,7 @@ async def home(request: Request):
 
 @app.get("/register", response_class=HTMLResponse)
 async def register_get(request: Request, msg: Optional[str] = None):
-    return templates.TemplateResponse("register.html", {"request": request, "msg": msg})
+    return render_template("register.html", {"request": request, "msg": msg})
 
 
 @app.post("/register", response_class=HTMLResponse)
@@ -252,7 +261,7 @@ async def register_post(
     password2: str = Form(...)
 ):
     if password != password2:
-        return templates.TemplateResponse("register.html", {"request": request, "msg": "Mật khẩu xác nhận không khớp."})
+        return render_template("register.html", {"request": request, "msg": "Mật khẩu xác nhận không khớp."})
 
     new_customer_payload = {
         "name": name,
@@ -280,7 +289,7 @@ async def register_post(
                     error_detail = " ".join(error_messages) if error_messages else "Lỗi không xác định từ dịch vụ."
                 except Exception:
                     error_detail = "Đã có lỗi xảy ra khi tạo tài khoản. Vui lòng thử lại."
-                return templates.TemplateResponse("register.html", {"request": request, "msg": error_detail})
+                return render_template("register.html", {"request": request, "msg": error_detail})
 
             # Automatically log in after successful registration
             login_payload = {"username": username, "password": password}
@@ -301,15 +310,15 @@ async def register_post(
                         request.session["access_token"] = token_data.get("access_token")
                 return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
             else:
-                return templates.TemplateResponse("login.html", {"request": request, "msg": "Đăng ký thành công. Vui lòng đăng nhập."})
+                return render_template("login.html", {"request": request, "msg": "Đăng ký thành công. Vui lòng đăng nhập."})
 
     except (httpx.RequestError, httpx.HTTPStatusError):
-        return templates.TemplateResponse("register.html", {"request": request, "msg": "Không thể kết nối đến dịch vụ khách hàng."})
+        return render_template("register.html", {"request": request, "msg": "Không thể kết nối đến dịch vụ khách hàng."})
 
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_get(request: Request, msg: Optional[str] = None):
-    return templates.TemplateResponse("login.html", {"request": request, "msg": msg})
+    return render_template("login.html", {"request": request, "msg": msg})
 
 @app.post("/login", response_class=HTMLResponse)
 async def login_post(request: Request, username: str = Form(...), password: str = Form(...)):
@@ -336,9 +345,9 @@ async def login_post(request: Request, username: str = Form(...), password: str 
                 return RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
             return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
     except httpx.RequestError:
-        return templates.TemplateResponse("login.html", {"request": request, "msg": "Dịch vụ đăng nhập không khả dụng."})
+        return render_template("login.html", {"request": request, "msg": "Dịch vụ đăng nhập không khả dụng."})
 
-    return templates.TemplateResponse("login.html", {"request": request, "msg": "Tên đăng nhập hoặc mật khẩu không đúng"})
+    return render_template("login.html", {"request": request, "msg": "Tên đăng nhập hoặc mật khẩu không đúng"})
 
 
 @app.get("/logout")
@@ -397,7 +406,7 @@ async def list_books(request: Request, user: dict = Depends(get_current_user)):
     query_base = urlencode(preserved_query)
     page_url_base = f"/books?{query_base}&" if query_base else "/books?"
         
-    return templates.TemplateResponse("books.html", {
+    return render_template("books.html", {
         "request": request, 
         "user": user, 
         "books": books_paginated,
@@ -424,7 +433,7 @@ async def add_book_get(request: Request, user: dict = Depends(get_current_user))
     except httpx.RequestError as e:
         print(f"Error fetching categories: {e}")
 
-    return templates.TemplateResponse("add_book.html", {"request": request, "user": user, "categories": categories})
+    return render_template("add_book.html", {"request": request, "user": user, "categories": categories})
 
 
 @app.get("/books/{book_id}", response_class=HTMLResponse)
@@ -486,7 +495,7 @@ async def book_detail(request: Request, book_id: int, user: dict = Depends(get_c
     except (httpx.RequestError, httpx.HTTPStatusError) as e:
         print(f"Error fetching book detail or reviews: {e}")
         raise HTTPException(status_code=503, detail="Dịch vụ sách đang gặp sự cố.")
-    return templates.TemplateResponse("book_detail.html", {
+    return render_template("book_detail.html", {
         "request": request, 
         "user": user, 
         "book": book,
@@ -511,7 +520,7 @@ async def edit_book_get(request: Request, book_id: int, user: dict = Depends(get
     except (httpx.RequestError, httpx.HTTPStatusError):
         raise HTTPException(status_code=404, detail="Sách không tồn tại hoặc dịch vụ sách lỗi.")
     
-    return templates.TemplateResponse("edit_book.html", {"request": request, "user": user, "book": book, "categories": categories})
+    return render_template("edit_book.html", {"request": request, "user": user, "book": book, "categories": categories})
 
 
 @app.post("/books/{book_id}/edit")
@@ -638,7 +647,7 @@ async def view_cart(request: Request, user: dict = Depends(get_current_user)):
     customer_id = user.get("id")
     items, total = [], 0
     if not customer_id:
-        return templates.TemplateResponse("cart.html", {"request": request, "user": user, "items": [], "total": 0})
+        return render_template("cart.html", {"request": request, "user": user, "items": [], "total": 0})
 
     try:
         async with httpx.AsyncClient(base_url=CART_SERVICE_URL) as cart_client:
@@ -662,7 +671,7 @@ async def view_cart(request: Request, user: dict = Depends(get_current_user)):
     except (httpx.RequestError, httpx.HTTPStatusError) as e:
         print(f"Error viewing cart: {e}")
 
-    return templates.TemplateResponse("cart.html", {"request": request, "user": user, "items": items, "total": total})
+    return render_template("cart.html", {"request": request, "user": user, "items": items, "total": total})
 
 
 @app.get("/checkout", response_class=HTMLResponse)
@@ -704,7 +713,7 @@ async def checkout_get(request: Request, user: dict = Depends(get_current_user))
         else (addresses[0].get("id") if addresses else None)
     )
 
-    return templates.TemplateResponse("checkout.html", {
+    return render_template("checkout.html", {
         "request": request, 
         "user": user, 
         "items": items_for_display, 
@@ -895,7 +904,7 @@ async def checkout_post(
 async def order_complete(request: Request, order_code: str, user: dict = Depends(get_current_user)):
     role_required(user, ["customer", "staff", "manager"])
     order = await get_order_by_code(order_code)
-    return templates.TemplateResponse("order_complete.html", {"request": request, "user": user, "order": order})
+    return render_template("order_complete.html", {"request": request, "user": user, "order": order})
 
 
 @app.get("/order/{order_code}/payment-info", response_class=HTMLResponse)
@@ -910,7 +919,7 @@ async def payment_info(request: Request, order_code: str, user: dict = Depends(g
         "account_holder": "CONG TY TNHH BOOKSTORE",
         "transfer_content": f"Thanh toan don hang {order_code}"
     }
-    return templates.TemplateResponse("payment_info.html", {"request": request, "user": user, "order": order, "bank_info": bank_info})
+    return render_template("payment_info.html", {"request": request, "user": user, "order": order, "bank_info": bank_info})
 
 
 @app.post("/order/{order_code}/confirm-payment")
@@ -946,12 +955,12 @@ async def view_account(request: Request, user: dict = Depends(get_current_user))
                     user_orders = response.json()
         except httpx.RequestError as e:
             print(f"Error fetching user orders: {e}")
-    return templates.TemplateResponse("account.html", {"request": request, "user": user, "user_orders": user_orders})
+    return render_template("account.html", {"request": request, "user": user, "user_orders": user_orders})
 
 @app.get("/account/addresses", response_class=HTMLResponse)
 async def manage_addresses(request: Request, user: dict = Depends(get_current_user)):
     role_required(user, ["customer"])
-    return templates.TemplateResponse("account_addresses.html", {"request": request, "user": user, "addresses": user.get("addresses", [])})
+    return render_template("account_addresses.html", {"request": request, "user": user, "addresses": user.get("addresses", [])})
 
 @app.post("/account/addresses/add")
 async def add_address(
@@ -1080,7 +1089,7 @@ async def admin_dashboard(request: Request, user: dict = Depends(get_current_use
     except httpx.RequestError:
         pass
 
-    return templates.TemplateResponse("admin.html", {
+    return render_template("admin.html", {
         "request": request,
         "user": user,
         "books": books,
@@ -1119,7 +1128,7 @@ async def admin_customers_list(request: Request, user: dict = Depends(get_curren
         if customer_id is not None:
             order_count_map[customer_id] = order_count_map.get(customer_id, 0) + 1
 
-    return templates.TemplateResponse("admin_customers.html", {
+    return render_template("admin_customers.html", {
         "request": request,
         "user": user,
         "customers": customers,
@@ -1152,7 +1161,7 @@ async def admin_carts_list(request: Request, user: dict = Depends(get_current_us
     for cart in carts:
         cart["item_count"] = sum(item.get("quantity", 0) for item in cart.get("items", []))
 
-    return templates.TemplateResponse("admin_carts.html", {
+    return render_template("admin_carts.html", {
         "request": request,
         "user": user,
         "carts": carts,
@@ -1219,7 +1228,7 @@ async def admin_reviews_list(request: Request, user: dict = Depends(get_current_
             print(f"Error fetching review details: {e}")
 
     reviews.sort(key=lambda x: x.get("created_at") or "", reverse=True)
-    return templates.TemplateResponse("admin_reviews.html", {
+    return render_template("admin_reviews.html", {
         "request": request,
         "user": user,
         "reviews": reviews,
@@ -1248,7 +1257,7 @@ async def admin_orders_list(request: Request, user: dict = Depends(get_current_u
     except httpx.RequestError as e:
         print(f"Error fetching all orders: {e}")
     
-    return templates.TemplateResponse("admin_orders.html", {
+    return render_template("admin_orders.html", {
         "request": request, 
         "user": user, 
         "orders": orders
@@ -1283,7 +1292,7 @@ async def admin_categories_list(request: Request, user: dict = Depends(get_curre
                 categories = response.json()
     except httpx.RequestError as e:
         print(f"Error fetching categories: {e}")
-    return templates.TemplateResponse("admin_categories.html", {"request": request, "user": user, "categories": categories})
+    return render_template("admin_categories.html", {"request": request, "user": user, "categories": categories})
 
 
 @app.post("/admin/categories/add")
@@ -1307,7 +1316,7 @@ async def admin_edit_category_get(request: Request, cat_id: int, user: dict = De
             category = response.json()
     except (httpx.RequestError, httpx.HTTPStatusError):
         raise HTTPException(status_code=404, detail="Category not found")
-    return templates.TemplateResponse("admin_category_edit.html", {"request": request, "user": user, "category": category})
+    return render_template("admin_category_edit.html", {"request": request, "user": user, "category": category})
 
 
 @app.post("/admin/categories/{cat_id}/edit")
@@ -1357,7 +1366,7 @@ async def manager_dashboard(request: Request, user: dict = Depends(get_current_u
 
     total_revenue = sum(float(order.get("total_price") or 0) for order in orders if order.get("status") != "cancelled")
 
-    return templates.TemplateResponse("manager.html", {
+    return render_template("manager.html", {
         "request": request,
         "user": user,
         "stats": {
@@ -1396,7 +1405,7 @@ async def manager_customers_list(request: Request, user: dict = Depends(get_curr
         if customer_id is not None:
             order_count_map[customer_id] = order_count_map.get(customer_id, 0) + 1
 
-    return templates.TemplateResponse("admin_customers.html", {
+    return render_template("admin_customers.html", {
         "request": request,
         "user": user,
         "customers": customers,
@@ -1432,7 +1441,7 @@ async def manager_revenue(request: Request, user: dict = Depends(get_current_use
         for month, revenue in sorted(monthly_revenue_map.items(), reverse=True)
     ]
 
-    return templates.TemplateResponse("manager_revenue.html", {
+    return render_template("manager_revenue.html", {
         "request": request,
         "user": user,
         "orders": paid_orders,
@@ -1454,7 +1463,7 @@ async def manager_staff_list(request: Request, user: dict = Depends(get_current_
     except httpx.RequestError as e:
         print(f"Error fetching staffs: {e}")
 
-    return templates.TemplateResponse("manager_staff.html", {
+    return render_template("manager_staff.html", {
         "request": request,
         "user": user,
         "staffs": staffs,
@@ -1532,3 +1541,68 @@ async def manager_delete_staff(request: Request, staff_id: int, user: dict = Dep
     except httpx.RequestError as e:
         print(f"Error deleting staff {staff_id}: {e}")
     return RedirectResponse(url="/manager/staff", status_code=status.HTTP_302_FOUND)
+
+
+@app.post("/api/chatbot/ingest")
+async def chatbot_ingest(user: dict = Depends(get_current_user)):
+    role_required(user, ["staff", "manager"])
+    try:
+        async with httpx.AsyncClient(base_url=CHATBOT_SERVICE_URL, timeout=30) as client:
+            res = await client.post("/api/chatbot/ingest/books")
+            res.raise_for_status()
+            return res.json()
+    except (httpx.RequestError, httpx.HTTPStatusError) as e:
+        raise HTTPException(status_code=503, detail=f"Chatbot ingest failed: {e}")
+
+
+@app.post("/api/chatbot/chat")
+async def chatbot_chat(
+    payload: dict = Body(...),
+    user: dict = Depends(get_current_user),
+):
+    message = str(payload.get("message") or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Message is required")
+
+    request_payload = {
+        "message": message,
+        "top_k": int(payload.get("top_k") or 5),
+        "session_id": payload.get("session_id"),
+        "customer_id": user.get("id") if user.get("role") == "customer" else None,
+    }
+
+    try:
+        async with httpx.AsyncClient(base_url=CHATBOT_SERVICE_URL, timeout=30) as client:
+            res = await client.post("/api/chatbot/chat", json=request_payload)
+            res.raise_for_status()
+            return res.json()
+    except (httpx.RequestError, httpx.HTTPStatusError) as e:
+        raise HTTPException(status_code=503, detail=f"Chatbot unavailable: {e}")
+
+
+@app.get("/api/chatbot/history")
+async def chatbot_history(session_id: str, user: dict = Depends(get_current_user)):
+    try:
+        async with httpx.AsyncClient(base_url=CHATBOT_SERVICE_URL, timeout=30) as client:
+            res = await client.get(f"/api/chatbot/sessions/{session_id}/messages")
+            res.raise_for_status()
+            return res.json()
+    except (httpx.RequestError, httpx.HTTPStatusError) as e:
+        raise HTTPException(status_code=503, detail=f"Chatbot history unavailable: {e}")
+
+
+@app.delete("/api/chatbot/history")
+async def chatbot_delete_history(session_id: str, user: dict = Depends(get_current_user)):
+    try:
+        async with httpx.AsyncClient(base_url=CHATBOT_SERVICE_URL, timeout=30) as client:
+            res = await client.delete(f"/api/chatbot/sessions/{session_id}")
+            res.raise_for_status()
+            return res.json()
+    except (httpx.RequestError, httpx.HTTPStatusError) as e:
+        raise HTTPException(status_code=503, detail=f"Chatbot delete history unavailable: {e}")
+
+
+@app.get("/chatbot", response_class=HTMLResponse)
+async def chatbot_page(request: Request, user: dict = Depends(get_current_user)):
+    role_required(user, ["customer", "staff", "manager"])
+    return render_template("chatbot.html", {"request": request, "user": user})

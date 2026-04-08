@@ -11,7 +11,7 @@ app = FastAPI(title="Catalog Service")
 
 DB_URL = os.getenv(
     "DB_URL",
-    "mysql+pymysql://root:123456@host.docker.internal:3306/catalog_db",
+    "mysql+pymysql://root:123456@db:3306/catalog_db",
 )
 
 

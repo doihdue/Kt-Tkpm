@@ -213,3 +213,13 @@ ports:
 - Migrations are run automatically when services start
 - Tests can be run with: `docker-compose exec [service-name] python manage.py test`
 - manager-service, catalog-service, comment-rate-service, recommender-ai-service now persist data in MySQL using SQLAlchemy.
+
+Customer
+Username: customer1
+Password: Pass@123456
+Staff
+Username: staff1
+Password: Pass@123456
+Manager
+Username: manager1
+Password: Pass@123456
