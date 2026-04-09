@@ -11,10 +11,16 @@
             <div class="d-flex align-items-center gap-2">
                 <span class="badge rounded-pill text-bg-light border">{{ total_books or books|length }} đầu sách</span>
                 {% if user.role == 'staff' %}
+                <button id="booksIngestBtn" type="button" class="btn btn-outline-primary">
+                    <i class="bi bi-arrow-repeat me-2"></i>Re-ingest Chatbot
+                </button>
                 <a class="btn btn-primary" href="/books/add"><i class="bi bi-plus-circle-fill me-2"></i>Thêm sách mới</a>
                 {% endif %}
             </div>
         </div>
+        {% if user.role == 'staff' %}
+        <div class="small text-muted mb-2" id="booksIngestStatus"></div>
+        {% endif %}
 
         <form method="get" action="/books" class="row g-2 align-items-end">
             <div class="col-lg-5 col-md-6">
@@ -116,5 +122,42 @@
         <a href="/books" class="btn btn-outline-primary">Xem toàn bộ sách</a>
     </div>
 </div>
+{% endif %}
+
+{% if user.role == 'staff' %}
+<script>
+    (function () {
+        const btn = document.getElementById('booksIngestBtn');
+        const status = document.getElementById('booksIngestStatus');
+        if (!btn || !status) {
+            return;
+        }
+
+        btn.addEventListener('click', async function () {
+            btn.disabled = true;
+            status.className = 'small text-muted mb-2';
+            status.textContent = 'Đang ingest dữ liệu chatbot...';
+
+            try {
+                const res = await fetch('/api/chatbot/ingest', {
+                    method: 'POST',
+                    headers: { 'Accept': 'application/json' }
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    throw new Error(data.detail || 'Ingest thất bại');
+                }
+
+                status.className = 'small text-success mb-2';
+                status.textContent = `Ingest thành công: ${data.documents_upserted ?? 0} tài liệu, ${data.chunks_upserted ?? 0} chunks.`;
+            } catch (err) {
+                status.className = 'small text-danger mb-2';
+                status.textContent = String(err && err.message ? err.message : err);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    })();
+</script>
 {% endif %}
 {% endblock %}
