@@ -24,7 +24,7 @@ app = FastAPI(title="Recommender AI Service")
 
 DB_URL = os.getenv(
     "DB_URL",
-    "mysql+pymysql://root:123456@host.docker.internal:3306/recommender_db",
+    "mysql+pymysql://root:123456@db:3306/recommender_db",
 )
 BOOK_SERVICE_URL = os.getenv("BOOK_SERVICE_URL", "http://book-service:8000")
 ORDER_SERVICE_URL = os.getenv("ORDER_SERVICE_URL", "http://order-service:8000")

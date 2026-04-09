@@ -13,7 +13,7 @@ app = FastAPI(title="Manager Service")
 
 DB_URL = os.getenv(
     "DB_URL",
-    "mysql+pymysql://root:123456@host.docker.internal:3306/manager_db",
+    "mysql+pymysql://root:123456@db:3306/manager_db",
 )
 
 
