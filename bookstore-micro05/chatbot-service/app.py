@@ -83,7 +83,7 @@ BOOK_INTENT_KEYWORDS: Set[str] = {
     "mua",
     "goi y",
     "de xuat",
-    "doc",
+    "doc sach",
     "nha xuat ban",
     "ton kho",
     "noi dung",
@@ -289,8 +289,14 @@ def _book_detail_url(meta: Dict[str, Any]) -> Optional[str]:
 
 def _is_book_related(message: str) -> bool:
     normalized = normalize_text(message)
-    return any(kw in normalized for kw in BOOK_INTENT_KEYWORDS)
 
+    def _contains_book_kw(keyword: str) -> bool:
+        key = normalize_text(keyword)
+        if " " in key:
+            return key in normalized
+        return re.search(rf"\b{re.escape(key)}\b", normalized) is not None
+
+    return any(_contains_book_kw(kw) for kw in BOOK_INTENT_KEYWORDS)
 
 def _build_context_snapshot(message: str, citations: List[SearchResult]) -> Dict[str, Any]:
     return {
@@ -299,33 +305,6 @@ def _build_context_snapshot(message: str, citations: List[SearchResult]) -> Dict
         "timestamp": datetime.utcnow().isoformat(),
         "citations": [c.model_dump() for c in citations],
     }
-
-
-def _build_general_answer(message: str) -> Optional[str]:
-    normalized = normalize_text(message)
-    now = datetime.now()
-
-    if "hom nay" in normalized and ("ngay" in normalized or "thu" in normalized):
-        weekdays = {
-            0: "Thứ Hai",
-            1: "Thứ Ba",
-            2: "Thứ Tư",
-            3: "Thứ Năm",
-            4: "Thứ Sáu",
-            5: "Thứ Bảy",
-            6: "Chủ Nhật",
-        }
-        weekday_label = weekdays.get(now.weekday(), "Hôm nay")
-        return f"Hôm nay là {weekday_label}, ngày {now.strftime('%d/%m/%Y')}."
-
-    if "may gio" in normalized or "gio" in normalized:
-        return f"Hiện tại là {now.strftime('%H:%M')} (giờ hệ thống)."
-
-    if any(token in normalized for token in ["xin chao", "chao", "hello", "hi"]):
-        return "Chào bạn, mình có thể hỗ trợ cả câu hỏi ngắn general và tư vấn sách chi tiết khi bạn cần."
-
-    return None
-
 
 def _is_book_intent(message: str, citations: List[SearchResult]) -> bool:
     text_norm = normalize_text(message)
@@ -745,9 +724,6 @@ def _build_answer(message: str, citations: List[SearchResult]) -> str:
 
     if not citations:
         if not _is_book_related(message):
-            general = _build_general_answer(message)
-            if general:
-                return general
             return (
                 "Mình ưu tiên tư vấn sách, nhưng vẫn hỗ trợ câu hỏi general ngắn gọn. "
                 "Với câu này mình chưa có đủ ngữ cảnh để trả lời chắc chắn, bạn có thể hỏi cụ thể hơn nhé."
@@ -829,15 +805,16 @@ def _build_context_for_llm(message: str, citations: List[SearchResult]) -> str:
         )
     joined = "\n".join(context_blocks)
     if not joined:
-        joined = "(không có context sách phù hợp trực tiếp cho câu hỏi này)"
+        joined = "(không có context sách. Hãy dùng kiến thức chung của bạn để giải đáp một cách ngắn gọn)"
+    
     return (
         "Bạn là trợ lý thông minh cho website thương mại điện tử sách. "
-        "Ưu tiên tuyệt đối câu trả lời liên quan sách và dữ liệu context đã cung cấp. "
-        "Nếu câu hỏi là general (không liên quan sách), vẫn được trả lời ngắn gọn 1-3 câu bằng tiếng Việt. "
-        "Không bịa các dữ kiện cụ thể về sách nếu context không có.\n\n"
+        "Luôn ưu tiên dữ liệu Context để trả lời nếu câu hỏi liên quan đến cửa hàng. "
+        "Nếu câu hỏi là câu hỏi chung (General) hoặc toán học, hãy trả lời ngắn gọn 1-3 câu bằng tiếng Việt tự nhiên và bỏ qua Context nếu không liên quan. "
+        "Tuyệt đối không bịa đặt các dữ kiện cụ thể về sách nếu context không có.\n\n"
         f"Context:\n{joined}\n\n"
         f"Câu hỏi người dùng: {message}\n"
-        "Yêu cầu trả lời: ngắn gọn bằng tiếng Việt. Nếu có sách phù hợp thì gợi ý 2-3 sách và thêm link chi tiết khi có."
+        "Yêu cầu trả lời: Trả lời thật tự nhiên. BẮT BUỘC CHỈ DÙNG TIẾNG VIỆT (Vietnamese only), TUYỆT ĐỐI KHÔNG DÙNG TIẾNG TRUNG. Nếu có sách phù hợp thì ưu tiên gợi ý."
     )
 
 
@@ -849,7 +826,15 @@ def _generate_answer_with_llm(message: str, citations: List[SearchResult]) -> Op
     request_payload = {
         "model": LLM_MODEL,
         "messages": [
-            {"role": "system", "content": "Bạn là chatbot tư vấn sách chính xác và hữu ích."},
+            {
+                "role": "system",
+                "content": (
+                    "Bạn là trợ lý AI cho website sách. "
+                    "YÊU CẦU BẮT BUỘC: Bạn CHỈ ĐƯỢC PHÉP dùng Tiếng Việt (Vietnamese) để trả lời. "
+                    "Tuyệt đối KHÔNG sử dụng tiếng Trung (Chinese) hay tiếng Anh. "
+                    "Áp dụng quy tắc này cho TẤT CẢ câu hỏi, kể cả câu hỏi toán hoặc kiến thức chung."
+                ),
+            },
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.2,
@@ -885,7 +870,8 @@ def _generate_answer_with_llm(message: str, citations: List[SearchResult]) -> Op
 def chat(payload: ChatRequest):
     db: Session = SessionLocal()
     try:
-        if db.query(KnowledgeChunk).count() == 0:
+        book_related = _is_book_related(payload.message)
+        if book_related and db.query(KnowledgeChunk).count() == 0:
             ingest_books()
 
         if payload.session_id:
@@ -897,17 +883,16 @@ def chat(payload: ChatRequest):
             session = ChatSession(id=str(uuid4()), customer_id=payload.customer_id, created_at=datetime.utcnow(), updated_at=datetime.utcnow())
             db.add(session)
 
-        book_related = _is_book_related(payload.message)
-        citations = (
-            search(query=payload.message, top_k=min(payload.top_k, MAX_CONTEXT_CHUNKS))
-            if book_related
-            else []
+        # Luôn gọi search để có context đầy đủ cho mô hình sinh chữ, giúp trả lời chất lượng cao hơn
+        citations = search(
+            query=payload.message,
+            top_k=min(payload.top_k, MAX_CONTEXT_CHUNKS),
         )
 
-        if _is_book_intent(payload.message, citations):
+        # Chỉ sử dụng model AI để tạo câu trả lời. Fallback qua deterministic flow (gen bình thường) nếu LLM lỗi.
+        answer = _generate_answer_with_llm(payload.message, citations)
+        if not answer:
             answer = _build_answer(payload.message, citations)
-        else:
-            answer = _generate_answer_with_llm(payload.message, citations) or _build_answer(payload.message, citations)
         context_snapshot = _build_context_snapshot(payload.message, citations)
 
         user_msg = ChatMessage(

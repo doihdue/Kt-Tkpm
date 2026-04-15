@@ -323,8 +323,8 @@ services:
       MAX_CONTEXT_CHUNKS: "3"
       LLM_API_BASE_URL: "${LLM_API_BASE_URL:-http://host.docker.internal:11434/v1}"
       LLM_API_KEY: "${LLM_API_KEY:-dummy}"
-      LLM_MODEL: "${LLM_MODEL:-qwen2.5:7b}"
-      LLM_TIMEOUT: "${LLM_TIMEOUT:-10}"
+      LLM_MODEL: "${LLM_MODEL:-qwen2.5:3b}"
+      LLM_TIMEOUT: "${LLM_TIMEOUT:-45}"
       LLM_MAX_TOKENS: "${LLM_MAX_TOKENS:-180}"
     depends_on:
       db:
@@ -343,7 +343,7 @@ services:
   api-gateway:
     build: ./api-gateway
     ports:
-      - "8080:8000"
+      - "8081:8000"
     depends_on:
       auth-service:
         condition: service_healthy

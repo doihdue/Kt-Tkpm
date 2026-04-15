@@ -34,6 +34,7 @@ STAFF_SERVICE_URL = "http://staff-service:8000"
 COMMENT_RATE_SERVICE_URL = "http://comment-rate-service:8000"
 RECOMMENDER_AI_SERVICE_URL = "http://recommender-ai-service:8000"
 CHATBOT_SERVICE_URL = os.getenv("CHATBOT_SERVICE_URL", "http://chatbot-service:8000")
+CHATBOT_TIMEOUT = float(os.getenv("CHATBOT_TIMEOUT", "90"))
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
 
 
@@ -1547,7 +1548,7 @@ async def manager_delete_staff(request: Request, staff_id: int, user: dict = Dep
 async def chatbot_ingest(user: dict = Depends(get_current_user)):
     role_required(user, ["staff", "manager"])
     try:
-        async with httpx.AsyncClient(base_url=CHATBOT_SERVICE_URL, timeout=30) as client:
+        async with httpx.AsyncClient(base_url=CHATBOT_SERVICE_URL, timeout=CHATBOT_TIMEOUT) as client:
             res = await client.post("/api/chatbot/ingest/books")
             res.raise_for_status()
             return res.json()
@@ -1572,7 +1573,7 @@ async def chatbot_chat(
     }
 
     try:
-        async with httpx.AsyncClient(base_url=CHATBOT_SERVICE_URL, timeout=30) as client:
+        async with httpx.AsyncClient(base_url=CHATBOT_SERVICE_URL, timeout=CHATBOT_TIMEOUT) as client:
             res = await client.post("/api/chatbot/chat", json=request_payload)
             res.raise_for_status()
             return res.json()
@@ -1583,7 +1584,7 @@ async def chatbot_chat(
 @app.get("/api/chatbot/history")
 async def chatbot_history(session_id: str, user: dict = Depends(get_current_user)):
     try:
-        async with httpx.AsyncClient(base_url=CHATBOT_SERVICE_URL, timeout=30) as client:
+        async with httpx.AsyncClient(base_url=CHATBOT_SERVICE_URL, timeout=CHATBOT_TIMEOUT) as client:
             res = await client.get(f"/api/chatbot/sessions/{session_id}/messages")
             res.raise_for_status()
             return res.json()
@@ -1594,7 +1595,7 @@ async def chatbot_history(session_id: str, user: dict = Depends(get_current_user
 @app.delete("/api/chatbot/history")
 async def chatbot_delete_history(session_id: str, user: dict = Depends(get_current_user)):
     try:
-        async with httpx.AsyncClient(base_url=CHATBOT_SERVICE_URL, timeout=30) as client:
+        async with httpx.AsyncClient(base_url=CHATBOT_SERVICE_URL, timeout=CHATBOT_TIMEOUT) as client:
             res = await client.delete(f"/api/chatbot/sessions/{session_id}")
             res.raise_for_status()
             return res.json()
